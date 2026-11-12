@@ -20,6 +20,7 @@ jobs:
         env:
           WXQ_BIN: ${{ github.workspace }}/open/hanhuo_open.bin
         run: |
+          pip install numpy
           # 词典构建（rime-ice 源下载）
           mkdir -p ~/tmp/rimeice_cn && cd ~/tmp/rimeice_cn
           for f in 8105 41448 base ext others; do
