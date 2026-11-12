@@ -28,6 +28,8 @@ const DEFAULT_NNLM_URL = './nnlm.safetensors';
 const DEFAULT_MDLTR_URL = './mdltr.safetensors';
 const DEFAULT_EN_URL = './en_open.tsv';
 const DEFAULT_ENLM_URL = './enlm.safetensors';
+const LMCN_UNI_URL = './lmcn_unigram_full.tsv';
+const LMCN_BG_URL = './lmcn_bigram_final.tsv';
 
 function queryParams() {
   try {
@@ -146,6 +148,8 @@ export class EngineAdapter {
         ['mdltrBytes', params.get('mdltr') || DEFAULT_MDLTR_URL, 'mdltr'],
         ['enBytes', params.get('en') || DEFAULT_EN_URL, 'en词表'],
         ['enlmBytes', params.get('enlm') || DEFAULT_ENLM_URL, 'enlm'],
+        ['lmcnUni', params.get('lmcn') || LMCN_UNI_URL, 'lmcn-uni'],
+        ['lmcnBg', LMCN_BG_URL, 'lmcn-bg'],
       ]) {
         if (params.get({ nnlmBytes: 'nnlm', mdltrBytes: 'mdltr', enBytes: 'en', enlmBytes: 'enlm' }[key]) === '0') continue; // 显式关闭
         if (!(await urlExists(url))) continue;

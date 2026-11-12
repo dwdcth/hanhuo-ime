@@ -286,10 +286,8 @@ mod tests {
     use super::*;
     use crate::mdltr_refs::REFS;
 
-    /// 官方推理对照基准（研究线: 依赖带 MDLT 区的对照 bin——开源仓
-    /// 无此件, 缺席跳过）
+    /// 官方推理对照基准（Unicorn 0x1808A0920 验证 35/35 的种子向量）
     #[test]
-    #[ignore = "需研究线对照 bin（开源仓不带）"]
     fn official_ref_vectors() {
         let bin = std::path::PathBuf::from(
             std::env::var("HANHUO_BIN").unwrap_or_else(|_| {

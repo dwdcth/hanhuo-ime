@@ -73,7 +73,7 @@ mod tests {
     }
     #[test]
     fn nt_membership() {
-        // 开源仓不带词性表（研究线资产）: 表缺席 → 全 false 的降级语义锁
+        assert!(nt_has("津田"));
         assert!(!nt_has("启车"));
     }
 }

@@ -163,6 +163,13 @@ pub fn en_candidates(inp: &str, topk: usize) -> String {
     format!("{{\"cands\":[{}]}}", items.join(","))
 }
 
+/// 注入 lmcn 双表（uni/bg tsv 字节——中文联想链/深召回面分依赖;
+/// data/lmcn_open/ 两件, 缺席时 fcomp 垃圾面抢占）。
+#[wasm_bindgen]
+pub fn init_lmcn(uni: &[u8], bg: &[u8]) -> bool {
+    hanhuo_lm::lmcn::lmcn_init_bytes(uni, bg)
+}
+
 /// T9 九宫模式开关（纯 2-9 数字键串走九宫展开——设计-T9九宫输入;
 /// CLI --t9 同律, on=false 恢复默认关）。返回 true=成功。
 #[wasm_bindgen]

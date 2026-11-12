@@ -201,7 +201,12 @@ pub fn default_bin() -> PathBuf {
     if let Ok(p) = std::env::var("WXQ_BIN") {
         return PathBuf::from(p);
     }
-    PathBuf::from("open/hanhuo_open.bin")
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let p = PathBuf::from(home).join("tmp/hanhuo/wxq.bin");
+    if p.exists() {
+        return p;
+    }
+    PathBuf::from("wxq.bin")
 }
 
 /// 声调筛选语法层共享助手: 调号剥离 + 记位（净输入字节位→调号 1-5;
@@ -278,7 +283,7 @@ fn load_epyn_tsv() -> HashMap<String, Vec<String>> {
     }
     if path.is_none() {
         let p = PathBuf::from(
-            "",
+            "tmp/hanhuo/editpinyin_solved.tsv",
         );
         if p.exists() {
             path = Some(p);
@@ -430,9 +435,23 @@ mod tests {
     /// y ∈ (b_out − Σ_{j<5}|out_j|, b_out + Σ_{j<5}|out_j|)（tanh ∈ (−1,1) 开区间）
     #[test]
     fn mix_recall_output_strictly_bounded() {
-        // 开源版零权重: 前向恒 0（=b_out=0）——闭区间零锚
-        let x = [3.0f64, -2.0, 1.5, 7.0, -8.0, 0.25, -11.0, 4.0];
-        assert!(hanhuo_types::constants::mix_recall_forward(&x) == 0.0);
+        let amp: f64 = MIX_RECALL_OUT.iter().take(5).map(|v| v.abs()).sum();
+        let (lo, hi) = (MIX_RECALL_OUT[5] - amp, MIX_RECALL_OUT[5] + amp);
+        let mut cases: Vec<[f64; 8]> = vec![
+            [0.0; 8],
+            [3.0, -2.0, 1.5, 7.0, -8.0, 0.25, -11.0, 4.0],
+        ];
+        for i in 0..8 {
+            for &s in &[1e6, -1e6] {
+                let mut x = [0.0; 8];
+                x[i] = s;
+                cases.push(x);
+            }
+        }
+        for x in &cases {
+            let y = mix_recall_forward(x);
+            assert!(y > lo && y < hi, "x={x:?} y={y} 越界 ({lo}, {hi})");
+        }
     }
 
     /// 单轴饱和: 仅 x_i → ±∞ 时前向收敛到闭式极限
@@ -460,13 +479,15 @@ mod tests {
     /// 饱和收敛; 全幅 ±1e300 列和有界（|w|<1 → 部分和 < f64::MAX）
     #[test]
     fn mix_recall_extreme_inputs_stay_finite() {
-        // 零权重: 有限极端值仍有限（0×有限=0）; ±inf 的 0×inf=NaN
-        // 属 IEEE 数学事实, 非零权重时代的饱和性质不再适用——排除
         for i in 0..8 {
-            let mut x = [0.0f64; 8];
-            x[i] = 1e300;
-            assert!(hanhuo_types::constants::mix_recall_forward(&x).is_finite());
+            for &v in &[f64::INFINITY, f64::NEG_INFINITY] {
+                let mut x = [0.0f64; 8];
+                x[i] = v;
+                assert!(mix_recall_forward(&x).is_finite(), "轴 {i} = {v}");
+            }
         }
+        assert!(mix_recall_forward(&[1e300; 8]).is_finite());
+        assert!(mix_recall_forward(&[-1e300; 8]).is_finite());
     }
 
     /// 原点一阶一致性: f(ε·e_i) ≈ f(0) + ε·∂f/∂x_i(0)

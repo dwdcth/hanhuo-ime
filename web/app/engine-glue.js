@@ -41,6 +41,11 @@
             ? opts.enlmBytes : new Uint8Array(opts.enlmBytes);
           mod.init_enlm(lb);
         }
+        if (opts.lmcnUni && opts.lmcnBg) {
+          const u8 = opts.lmcnUni instanceof Uint8Array ? opts.lmcnUni : new Uint8Array(opts.lmcnUni);
+          const g8 = opts.lmcnBg instanceof Uint8Array ? opts.lmcnBg : new Uint8Array(opts.lmcnBg);
+          if (!mod.init_lmcn(u8, g8)) console.warn('[glue] lmcn 注入失败');
+        }
         if (opts.nnlmBytes) {
           const nb = opts.nnlmBytes instanceof Uint8Array
             ? opts.nnlmBytes : new Uint8Array(opts.nnlmBytes);

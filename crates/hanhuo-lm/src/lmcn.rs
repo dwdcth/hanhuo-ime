@@ -4,11 +4,20 @@
 // S44-45 定谳: face_score = Σ lmcn_unigram_lp + trans(首词对, 表内直查/
 // 缺对→alpha(w1)) − 成本; 表=外包回收产物（外部路径, 腾讯衍生仅自用）。
 // WXQ_LMCN_FACE: 缺省/'1'=全域 / '2'=G1 门 / '0'=关（tick45 激活: 缺省开）
-pub const LMCN_DIR: &str = "/home/banshan/tmp/hanhuo/cascade";
+pub const LMCN_DIR: &str = "data/lmcn_open";
 
 /// 目录解析（含 c.6 开源重建表覆盖钮——不动腾讯原表, A/B 切换用）
 pub fn lmcn_dir() -> String {
-    std::env::var("HANHUO_LMCN_DIR").unwrap_or_else(|_| LMCN_DIR.into())
+    if let Ok(d) = std::env::var("HANHUO_LMCN_DIR") {
+        return d;
+    }
+    // 仓内钉版开源表（data/lmcn_open/ 随 LFS; 相对 cwd 双探同 epyn 律）
+    for cand in ["data/lmcn_open", "../../data/lmcn_open"] {
+        if std::path::Path::new(cand).join("lmcn_unigram_full.tsv").exists() {
+            return cand.into();
+        }
+    }
+    LMCN_DIR.into()
 }
 
 pub const LMCN_WORD_FLOOR: f64 = -6.76; // 缺词地板=2 字词中位（singleton 档中性化）
@@ -25,14 +34,59 @@ pub fn lmcn_mode() -> u8 {
 
 /// (uni, bg) 双表（tick66: pub —— channels_fuzz EMIX 域 uni 直读消费,
 /// py `_lmcn_tables` 镜像）。
+/// 全局双表单例（文件装载与 bytes 注入共用）。
+static LMCN_TABLES: std::sync::OnceLock<(
+    std::collections::HashMap<String, (f64, f64)>,
+    std::collections::HashMap<(String, String), f64>,
+)> = std::sync::OnceLock::new();
+
+/// 内存注入（wasm 等无文件 IO; 优先于文件装载——OnceLock 已设则跳过）。
+pub fn lmcn_init_bytes(uni: &[u8], bg: &[u8]) -> bool {
+    let parsed = lmcn_parse(
+        &String::from_utf8_lossy(uni),
+        &String::from_utf8_lossy(bg),
+    );
+    let ok = !parsed.0.is_empty() && !parsed.1.is_empty();
+    let _ = LMCN_TABLES.set(parsed);
+    ok
+}
+
+/// tsv 解析（文件/内存双入口共用）。
+fn lmcn_parse(
+    uni_txt: &str,
+    bg_txt: &str,
+) -> (std::collections::HashMap<String, (f64, f64)>,
+      std::collections::HashMap<(String, String), f64>) {
+    let mut uni = std::collections::HashMap::new();
+    let mut bg = std::collections::HashMap::new();
+    for ln in bg_txt.lines().skip(1) {
+        let mut f = ln.split('\t');
+        let (Some(a), Some(b), Some(v)) = (f.next(), f.next(), f.next()) else {
+            continue;
+        };
+        if let (Ok(x), Ok(y)) = (v.parse::<f64>(), a.parse::<f64>()) {
+            bg.insert((b.to_string(), a.to_string()), x * y);
+        }
+    }
+    for ln in uni_txt.lines().skip(1) {
+        let mut f = ln.split('\t');
+        let (Some(w), Some(lp), Some(_bi)) =
+            (f.next(), f.next(), f.next())
+        else {
+            continue;
+        };
+        if let Ok(p) = lp.parse::<f64>() {
+            uni.insert(w.to_string(), (p, p - 0.5));
+        }
+    }
+    (uni, bg)
+}
+
 pub fn lmcn_tables(
 ) -> &'static (std::collections::HashMap<String, (f64, f64)>,
                std::collections::HashMap<(String, String), f64>) {
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
-    static T: OnceLock<(HashMap<String, (f64, f64)>,
-                        HashMap<(String, String), f64>)> = OnceLock::new();
-    T.get_or_init(|| {
+    LMCN_TABLES.get_or_init(|| {
+        use std::collections::HashMap;
         let mut uni = HashMap::new();
         let mut bg = HashMap::new();
         let load = |p: &str| -> Option<String> {

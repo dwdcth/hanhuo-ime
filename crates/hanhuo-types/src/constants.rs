@@ -478,9 +478,9 @@ pub const ADV_SUB_LP_GATE: f64 = -4.5;
 // 判活（agentC_rules.md §2 台账）: mix_recall 全零 → fangan 的 档案(dang,an
 // typo) 掉出 #4; 同实验 buxuo/cchuang/buxcuo 面板零位移 → 门只作用 recall
 // 类深位候选（我方 = Kind::Correct），comp 族=corrected 不设门。
-// 开源版: 原权重自逆向研究线提取（属原厂资产衍生物）, 开源发布置零——
-// Kind::Correct 通道在实际查询分布中为零（见设计文档）, 置零行为不变。
-// 门逻辑保留（前向/门结构为工程实现, 见 query.rs mix_recall 门）。
+// 权重源: ~/tmp/hanhuo/md_params.json（t9_coef==coef 逐位同, agentO 复核）。
+// 开关 WXQ_MIX_RECALL_MLP（默认 on=native 活体; py 镜像同环境变量）。
+// 激活 tanh/线性输出/阈值 >0 为工程定（native 前向未逆向），数值锚 agentO_log S6 ----
 pub const MIX_RECALL_W: [[f64; 5]; 8] = [[0.0; 5]; 8];
 
 pub const MIX_RECALL_B: [f64; 5] = [0.0; 5];

@@ -40,6 +40,12 @@ export function init_en(bytes: Uint8Array | number[]): boolean;
 export function init_enlm(bytes: Uint8Array | number[]): boolean;
 
 /**
+ * 注入 lmcn 双表（uni/bg tsv 字节——中文联想链/深召回面分依赖;
+ * data/lmcn_open/ 两件, 缺席时 fcomp 垃圾面抢占）。
+ */
+export function init_lmcn(uni: Uint8Array | number[], bg: Uint8Array | number[]): boolean;
+
+/**
  * 注入 NNLM 模型字节（mobile/advanced 变体自动路由——CLI
  * attach_model_files 同律; advanced 需 core safetensors feature, 本
  * crate 已开）。返回 true=装载成功。B7/c.3 等 NNLM 消费方即刻换脑。
@@ -61,6 +67,7 @@ export interface InitOutput {
     readonly init: (a: number, b: number) => number;
     readonly init_en: (a: number, b: number) => number;
     readonly init_enlm: (a: number, b: number) => number;
+    readonly init_lmcn: (a: number, b: number, c: number, d: number) => number;
     readonly init_nnlm: (a: number, b: number) => number;
     readonly query: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
