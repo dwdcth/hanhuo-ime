@@ -21,6 +21,11 @@
 ## 快速开始
 
 ```bash
+# 克隆（数据/模型走 git-lfs——先 git lfs install; 克隆后核对
+#   data/*.safetensors 为真实内容非指针: git lfs pull）
+git clone https://github.com/dwdcth/hanhuo-ime.git && cd hanhuo-ime
+git lfs pull
+
 # 构建
 cargo build --release -p hanhuo-cli
 
