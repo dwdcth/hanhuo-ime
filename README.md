@@ -83,7 +83,7 @@ WXQ_BIN=open/hanhuo_open.bin target/release/hanhuo golden golden/open_golden.jso
 
 ## 数据与语料
 
-训练用原始语料与历史模型配方归档：**HuggingFace [dwdcth/hanhuo-ime-corpus](https://huggingface.co/datasets/dwdcth/hanhuo-ime-corpus)**（含 LCCC / wikitext-103 / THUCNews 采样、27 域包源词表、历史配方模型，及训练/词库工具脚本 `tools/`）
+训练用原始语料与历史模型配方归档：**HuggingFace [dwdcth/hanhuo-ime-corpus](https://huggingface.co/datasets/dwdcth/hanhuo-ime-corpus)**（LCCC 370M / wikitext-103 4.9G parquet / THUCNews 2.1G / rime-ice 5 源 / 8 域包源 tar / 训练与词库工具 `tools/` 34 件）
 （含 LCCC / wikitext-103 采样、27 域包源词表、历史配方模型）——每个目录附
 `SOURCES.md` 记录上游来源与许可。
 
