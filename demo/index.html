@@ -48,6 +48,10 @@ let t9 = new URLSearchParams(location.search).has('t9');
 if (t9) w.enable_t9(true);
 const nnlm = await fetch('./nnlm.safetensors').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
 if (nnlm) { w.init_nnlm(new Uint8Array(nnlm)); w.enable_boost(); }
+// lmcn 双表（深召回面分依赖——缺表时长简拼/长句面质量崩塌）
+const lmcnU = await fetch('./lmcn_unigram_full.tsv').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
+const lmcnB = await fetch('./lmcn_bigram_final.tsv').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
+if (lmcnU && lmcnB) w.init_lmcn(new Uint8Array(lmcnU), new Uint8Array(lmcnB));
 document.getElementById('status').textContent =
   `引擎就绪：${n.toLocaleString()} 词条${nnlm ? ' + NNLM 宽档' : ''}${t9 ? ' + T9' : ''}`;
 let committed = '';

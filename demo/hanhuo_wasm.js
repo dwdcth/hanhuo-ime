@@ -86,6 +86,29 @@ export function init_enlm(bytes) {
 }
 
 /**
+ * 注入 lmcn 双表（uni/bg tsv 字节——中文联想链/深召回面分依赖;
+ * data/lmcn_open/ 两件, 缺席时 fcomp 垃圾面抢占）。
+ * @param {Uint8Array | number[]} uni
+ * @param {Uint8Array | number[]} bg
+ * @returns {boolean}
+ */
+export function init_lmcn(uni, bg) {
+    let ptr0, len0, ptr1, len1;
+    try {
+        ptr0 = passArray8ToWasm0(uni, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passArray8ToWasm0(bg, wasm.__wbindgen_malloc);
+        len1 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr1) { wasm.__wbindgen_free(ptr1, len1 * 1, 1); }
+        if (ptr0) { wasm.__wbindgen_free(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.init_lmcn(ptr0, len0, ptr1, len1);
+    return ret !== 0;
+}
+
+/**
  * 注入 NNLM 模型字节（mobile/advanced 变体自动路由——CLI
  * attach_model_files 同律; advanced 需 core safetensors feature, 本
  * crate 已开）。返回 true=装载成功。B7/c.3 等 NNLM 消费方即刻换脑。
