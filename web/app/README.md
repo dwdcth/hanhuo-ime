@@ -25,7 +25,6 @@
 
 | 文件 | 说明 | 来源 |
 |---|---|---|
-| `wxq_dict.bin` | 词典（约 69.6MB/66.4MiB），`Hanhuo.init` 的 `dictBytes` | `~/tmp/wetype-win/wxq_dict.bin`（数据归腾讯，仅本地个人使用，**勿提交**） |
 | `hanhuo.js` | 引擎 glue：**classic script**，加载后提供 `window.Hanhuo`，自行同目录加载 wasm | `web/engine/hanhuo.js` |
 | `hanhuo.wasm` | WASM 模块（2.7MB，由 glue 加载/实例化） | `web/engine/hanhuo.wasm` |
 | `nnlm.safetensors` | 可选 NNLM 模型（存在才传给 `init` 的 `nnlmBytes`; 注入成功**即开宽档 boost**——尾槽+B7 句重排+beam150, 2026-11-20 升默认口径） | `data/nnlm_open_mobile_v2.safetensors`（自训开源, 推荐） |
