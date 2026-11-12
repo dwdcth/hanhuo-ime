@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/dwdcth/hanhuo-ime/actions/workflows/ci.yml/badge.svg)](https://github.com/dwdcth/hanhuo-ime/actions/workflows/ci.yml)
 
+**[🌐 在线演示](https://dwdcth.github.io/hanhuo-ime/demo/)** ——纯浏览器运行（词典 ~60MB + NNLM 宽档; T9 加 `?t9=1`）
+
 开源中文输入法引擎（Rust）——拼音 / 简拼 / T9 九宫 / 中英混输 / 语境联想，
 可编译到 WASM 在浏览器运行。全部数据与模型基于开源语料构建，不含任何
  proprietary 资产。
