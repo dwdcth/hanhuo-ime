@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hanhuo-ime 在线演示</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; }
+  #status { color: #666; font-size: 14px; }
+  #q { font-size: 20px; padding: 8px; width: 100%; box-sizing: border-box; }
+  #cands { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .c { padding: 6px 14px; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; font-size: 18px; }
+  .c:hover { background: #e8f0fe; }
+  #out { margin-top: 12px; font-size: 22px; min-height: 32px; }
+  a { color: #0969da; }
+</style>
+</head>
+<body>
+<h2>hanhuo-ime <small style="font-weight:400">wasm 在线演示</small></h2>
+<p id="status">词典加载中（约 60MB, 首次取决于网速）…</p>
+<input id="q" placeholder="输入拼音（nihao）/ T9 数字键（--t9 默认关, 试 94664486 用 ?t9=1 开启）" autofocus>
+<div id="cands"></div>
+<div id="out"></div>
+<p style="margin-top:2rem;font-size:13px;color:#888">
+  <a href="https://github.com/dwdcth/hanhuo-ime">GitHub</a> ·
+  Rust 引擎编译 WASM · 全开源模型与词库 · 纯浏览器运行零上传</p>
+<script type="module">
+const w = await import('./hanhuo_wasm.js');
+w.initSync({ module: await (await fetch('./hanhuo_wasm_bg.wasm')).arrayBuffer() });
+const dict = await (await fetch('./hanhuo_open.bin')).arrayBuffer();
+const n = w.init(new Uint8Array(dict));
+let t9 = new URLSearchParams(location.search).has('t9');
+if (t9) w.enable_t9(true);
+const nnlm = await fetch('./nnlm.safetensors').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
+if (nnlm) { w.init_nnlm(new Uint8Array(nnlm)); w.enable_boost(); }
+document.getElementById('status').textContent =
+  `引擎就绪：${n.toLocaleString()} 词条${nnlm ? ' + NNLM 宽档' : ''}${t9 ? ' + T9' : ''}`;
+let committed = '';
+const q = document.getElementById('q');
+q.addEventListener('input', () => {
+  const r = JSON.parse(w.query(q.value, committed, 10));
+  const box = document.getElementById('cands');
+  box.innerHTML = '';
+  r.cands.slice(0, 10).forEach((c, i) => {
+    const el = document.createElement('div');
+    el.className = 'c';
+    el.textContent = c.word;
+    el.onclick = () => { committed += c.word; q.value = ''; document.getElementById('out').textContent = committed; };
+    box.appendChild(el);
+  });
+});
+document.getElementById('out').textContent = '';
+</script>
+</body>
+</html>

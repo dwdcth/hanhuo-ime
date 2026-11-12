@@ -1,9 +1,0 @@
-[package]
-name = "hanhuo-dict"
-version = "0.1.0"
-edition = "2021"
-description = "词库资产层：bhash 桶定位哈希 + ckvdmac 长尾短语词典（642 万）"
-
-[dependencies]
-anyhow = "1"
-memmap2 = "0.9"
