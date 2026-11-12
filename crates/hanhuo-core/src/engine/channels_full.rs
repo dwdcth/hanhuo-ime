@@ -7,6 +7,17 @@ impl Engine {
     // ------------------------------------------------------------------
     /// 简拼键 → 展开音节 id 序列表（精确键优先，否则前缀键区间）
     pub(super) fn jianpin_keys(&self, inp: &str) -> Vec<Vec<u32>> {
+        self.jianpin_keys_opt(inp, false)
+    }
+
+    /// enroute=true 时附加「inp 以表键为前缀」的最长成词反查（在途面,
+    /// 产品增强——native 长简拼律=首字母单字列, golden 忠实锁此,
+    /// 故仅在途开关由 boost 消费侧传入）。
+    pub(super) fn jianpin_keys_opt(
+        &self,
+        inp: &str,
+        enroute: bool,
+    ) -> Vec<Vec<u32>> {
         let n = self.jian_n;
         // 二分精确（含 Python break 语义）
         let (mut a, mut b) = (0usize, n);
@@ -26,7 +37,25 @@ impl Engine {
         let rng: Vec<usize> = if a < n && self.jian_keys.get(a) == inp {
             vec![a]
         } else {
-            // 前缀界二分（'{' > 'z'）
+            // 2026-11-13 修: 前缀界二分的方向性 bug——原实现查「表键以
+            // inp 开头」（补全向: jtt→jttq）; 但 inp 超表键长上限（键≤4,
+            // jttqzbc=8 键）时需要反向「inp 以表键开头」（在途成词向:
+            // jttqzbc→jttq→今天天气面）。改为最长成词前缀反查:
+            // 精确命中各前缀长度, 最长者优先。
+            let exact = |k: &str| -> Option<usize> {
+                let (mut lo, mut hi) = (0usize, n);
+                while lo < hi {
+                    let mid = (lo + hi) / 2;
+                    let cur = self.jian_keys.get(mid);
+                    if cur.as_str() < k {
+                        lo = mid + 1;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                (lo < n && self.jian_keys.get(lo) == k).then_some(lo)
+            };
+            // 补全向（原语义, inp 短于表键）: 键以 inp 开头
             let mut needle = Vec::with_capacity(inp.len() + 1);
             needle.extend_from_slice(inp.as_bytes());
             needle.push(b'{');
@@ -40,7 +69,18 @@ impl Engine {
                     hi = mid;
                 }
             }
-            (a..lo.min(a + 64)).collect()
+            let mut rng: Vec<usize> = (a..lo.min(a + 64)).collect();
+            // 在途向（产品增强, 非 native——boost 域专属）: inp 的各
+            // 前缀中在表的最长键（jttqzbc→jttq→今天天气 在途成词面）
+            if enroute {
+                for l in (2..inp.len()).rev() {
+                    if let Some(i) = exact(&inp[..l]) {
+                        rng.push(i);
+                        break;
+                    }
+                }
+            }
+            rng
         };
         let mut out = Vec::new();
         let v3 = self.pack.ver >= 3;
@@ -753,11 +793,15 @@ impl Engine {
                 .filter_map(|s| id_of.get(s.as_str()).copied())
                 .collect();
             ids.sort_by(|&a, &b| self.sylw[b as usize].cmp(&self.sylw[a as usize]));
+            // 2026-11-13: 深键分支爆炸剪枝——每首字母 sylw top-16
+            // （jin/tian/bu/cuo 等高频音节全在档; 全量×6 深度中间态
+            // 远超预算, jttqzbc 类长简拼 DFS 3 层饿死零产出）
+            ids.truncate(16);
             by_ini.insert(*c, ids);
         }
         drop(cache);
         let mut out: Vec<Vec<u32>> = Vec::new();
-        let mut budget: usize = 50_000; // walk 步预算（最坏界: 每步一次 DAT 走查）
+        let mut budget: usize = 500_000; // walk 步预算（top-16 剪枝后 6 深度中间态仍大, 50k 饿死——2026-11-13 同 T9 修）
         let mut maxd = 0usize;
         jianpin_dfs(
             self, &by_ini, &letters, 0, &mut String::new(),
@@ -2672,7 +2716,7 @@ impl Engine {
     pub(super) fn q_jianpin(&self, inp: &str) -> Vec<Cand> {
         let mut out = Vec::new();
         let mut seen_rid: HashSet<u32> = HashSet::new();
-        let mut exps = self.jianpin_keys(inp);
+        let mut exps = self.jianpin_keys_opt(inp, self.boost.is_some());
         // B2.6b: 格 DP 句候选（boost 旋钮, ≥5 键句级域; 字段完整化后
         // 面板前注入——与原生句候选同形公平过打分管线）。**仅表无等长
         // 展开时启用**（表命中=原生已含金标, 格子垃圾句只会挤位——
@@ -2695,8 +2739,12 @@ impl Engine {
         }
         // 表展开无等长序列（裸键缺失/坏值丢弃）→ 首字母合成兜底
         if !exps.iter().any(|x| x.len() == inp.len()) {
-            // B2.6: DAT 制导展开先入列（词层活路优先）, 盲合成殿后补盲区
-            if self.boost.as_ref().map_or(false, |c| c.jianpin_dat) {
+            // B2.6: DAT 制导展开先入列（词层活路优先）, 盲合成殿后补盲区。
+            // 2026-11-13 修: dat_compose 随默认 boost 场开启（表键长上限
+            // 4——jttqzbc 类 6+ 音节简拼在表结构性缺席, 无此兜底则长简拼
+            // 整面坍缩成单字列; 词面经 DAT walk 校验, 非垃圾生成）;
+            // beam 段（B2.6b）保持 jianpin_dat 显式旋钮（竞择质量待修）。
+            if self.boost.is_some() {
                 let d = self.jianpin_dat_compose(inp, 48);
                 exps.extend(d);
             }
