@@ -7,7 +7,5 @@ __pycache__/
 # 领域词库产物（tools/domain_import.py 可重建, 源 THUOCL×slwd 拼音本地）
 data/domain/
 eval/eval_ext.jsonl
-data/*.safetensors
-!data/mdltr_open.safetensors
 editpinyin_solved.tsv
 web/hanhuo_wasm_bg.wasm*
