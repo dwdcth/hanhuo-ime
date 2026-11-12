@@ -12,6 +12,9 @@ jobs:
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@stable
+      - name: LFS 全量拉取（checkout lfs:true 在部分环境不拉全——
+          指针态文件致 open_build 静默空表, 实测 60.1MB 假 bin）
+        run: git lfs pull
       - name: Build
         run: cargo build --release -p hanhuo-cli
       - name: Test
