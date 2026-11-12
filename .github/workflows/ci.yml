@@ -21,11 +21,6 @@ jobs:
           WXQ_BIN: ${{ github.workspace }}/open/hanhuo_open.bin
         run: |
           pip install numpy
-          # 词典构建（rime-ice 源下载）
-          mkdir -p ~/tmp/rimeice_cn && cd ~/tmp/rimeice_cn
-          for f in 8105 41448 base ext others; do
-            curl -sLO "https://raw.githubusercontent.com/iDvel/rime-ice/main/cn_dicts/$f.dict.yaml"
-          done
-          cd $GITHUB_WORKSPACE
+          # 词典构建（仓内钉版源 data/rimeice_cn——行为全锁定）
           python3 tools/open_build.py
           target/release/hanhuo golden golden/open_golden.jsonl

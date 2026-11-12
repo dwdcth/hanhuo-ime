@@ -31,9 +31,7 @@ git lfs pull
 # 构建
 cargo build --release -p hanhuo-cli
 
-# 词典构建（首次）: 下载 rime-ice cn_dicts 到 ~/tmp/rimeice_cn/
-#   for f in 8105 41448 base ext others; \
-#     curl -LO https://raw.githubusercontent.com/iDvel/rime-ice/main/cn_dicts/$f.dict.yaml
+# 词典构建（仓内钉版源已随 LFS, 无需下载）
 python3 tools/open_build.py          # → open/hanhuo_open.bin
 
 # 查询

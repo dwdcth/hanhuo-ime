@@ -35,11 +35,11 @@ from pack import (PackWriter, fc_encode, fnv1a,  # noqa: E402
 from dat import DATBuilder  # noqa: E402
 from quant import freq_to_val  # noqa: E402
 
-# cn_dicts 源: rime-ice 官方（GitHub iDvel/rime-ice cn_dicts/, GPL-3.0）
-# 下载: for f in 8105 41448 base ext others; curl -LO .../cn_dicts/$f.dict.yaml
-for CN in [os.path.expanduser('~/tmp/rimeice_cn'),
-           os.path.expanduser('~/.local/share/rime-data/cn_dicts'),
-           '/usr/share/rime-data/cn_dicts']:
+# cn_dicts 源: 仓内钉版副本优先（data/rimeice_cn/, GPL-3.0, LFS——
+# 上游 main 会漂移致行为锁失效）; 外部目录为研究线回退
+for CN in [os.path.join(ROOT_DIR, 'data', 'rimeice_cn'),
+           os.path.expanduser('~/tmp/rimeice_cn'),
+           os.path.expanduser('~/.local/share/rime-data/cn_dicts')]:
     if os.path.isdir(CN):
         break
 else:
