@@ -1,0 +1,10 @@
+# 二进制数据资产不入库（部署时放置，见 README.md「部署」）
+*.bin
+*.wasm
+*.safetensors
+
+# 引擎侧产物的部署副本（源在 web/engine/，部署时复制到本目录）
+hanhuo.js
+
+# 本地测试遗留
+.smoke-shot.png

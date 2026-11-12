@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>hanhuo wasm 端到端</title>
+<style>
+body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2em auto; }
+#out { white-space: pre-wrap; font-family: monospace; background: #f6f6f6; padding: 1em; border-radius: 8px; }
+input { font-size: 1.2em; padding: .4em; width: 60%; }
+.ok { color: #0a0; } .bad { color: #c00; }
+</style>
+</head>
+<body>
+<h2>hanhuo 引擎 · 浏览器端到端</h2>
+<p id="status">装载中…</p>
+<p><input id="q" placeholder="输入拼音（如 nihao）" autofocus> <button id="go">查询</button></p>
+<div id="out"></div>
+<script type="module">
+import init, { init as loadBin, query } from './hanhuo_wasm.js';
+const $ = id => document.getElementById(id);
+const fmt = r => r.cands.slice(0, 8).map((c, i) =>
+  `${i + 1}. ${c.word}  (${c.kind}, ${c.score.toFixed(2)})`).join('\n');
+(async () => {
+  await init();
+  const bin = await (await fetch('../open/hanhuo_open.bin')).arrayBuffer();
+  const n = loadBin(new Uint8Array(bin));
+  $('status').textContent = `引擎就绪：${n.toLocaleString()} 词条（wasm 2.8MB + 词典 ${(bin.byteLength / 1e6).toFixed(1)}MB）`;
+  // 自动端到端: 与原生 CLI 裁定的四案
+  const cases = [
+    // 期望 = CLI 默认通道（query_typo_retry; 2026-11-20 wasm query
+    // 改道同律——旧期望 进/为 是 e.query faithful 单字列语义）
+    ['jintiantianqihenhao', '今天天气很好'], ['nihao', '你好'],
+    ['zhongguorenmin', '中国人民'], ['weixinshurufa', '为新输入法'],
+  ];
+  let pass = 0;
+  const lines = ['—— 自动对案（vs 原生 CLI）——'];
+  for (const [q, want] of cases) {
+    const r = JSON.parse(query(q, '', 5));
+    const got = r.cands[0]?.word;
+    const ok = got === want;
+    pass += ok;
+    lines.push(`${ok ? '✓' : '✗'} ${q} → ${got}（期望 ${want}）`);
+  }
+  lines.push(`端到端 ${pass}/${cases.length} 一致`);
+  $('out').textContent = lines.join('\n');
+  const run = () => {
+    const q = $('q').value.trim();
+    if (q) $('out').textContent = fmt(JSON.parse(query(q, '', 10)));
+  };
+  $('go').onclick = run;
+  $('q').onkeydown = e => { if (e.key === 'Enter') run(); };
+})();
+</script>
+</body>
+</html>

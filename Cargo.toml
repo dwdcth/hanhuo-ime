@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/hanhuo-types", "crates/hanhuo-lm", "crates/hanhuo-dict", "crates/hanhuo-core", "crates/hanhuo-cli", "crates/hanhuo-wasm"]
+resolver = "2"
+
+[profile.release]
+debug = false
+lto = "thin"

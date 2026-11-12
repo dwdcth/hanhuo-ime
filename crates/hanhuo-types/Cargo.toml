@@ -1,0 +1,5 @@
+[package]
+name = "hanhuo-types"
+version = "0.1.0"
+edition = "2021"
+description = "公共类型与常量族（最底层，零依赖）：Cand/Kind/引擎旋钮/罚表/覆盖表"
