@@ -27,7 +27,22 @@
 <script type="module">
 const w = await import('./hanhuo_wasm.js');
 w.initSync({ module: await (await fetch('./hanhuo_wasm_bg.wasm')).arrayBuffer() });
-const dict = await (await fetch('./hanhuo_open.bin')).arrayBuffer();
+// 词典下载进度显示
+const dict = await (async () => {
+  const r = await fetch('./hanhuo_open.bin');
+  const total = +r.headers.get('content-length') || 60e6;
+  const rd = r.body.getReader(); const chunks = []; let got = 0;
+  while (true) {
+    const {done, value} = await rd.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    document.getElementById('status').textContent =
+      `词典下载 ${got}/${total} B（${(got/total*100).toFixed(0)}%）…`;
+  }
+  const all = new Uint8Array(got);
+  let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+  return all.buffer;
+})();
 const n = w.init(new Uint8Array(dict));
 let t9 = new URLSearchParams(location.search).has('t9');
 if (t9) w.enable_t9(true);
