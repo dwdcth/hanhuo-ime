@@ -1,8 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main]
-  pull_request:
+    tags: ['v*']  # 打 tag 才跑（免费额度纪律: 本地调通→提交→发版 tag 验证）
 
 jobs:
   test:
