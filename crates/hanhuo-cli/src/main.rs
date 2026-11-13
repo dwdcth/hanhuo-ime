@@ -360,6 +360,20 @@ fn zhiyi_emit_score(
                             }
                         }
                     }
+                    if std::env::var("EMIT_DBG").is_ok() {
+                        let chars = &g.m.vocab.chars;
+                        for k in 0..n_slot {
+                            let row = &flat[k * 6163..(k + 1) * 6163];
+                            let mut idx: Vec<usize> = (0..row.len()).collect();
+                            idx.sort_by(|&a, &b| row[b].partial_cmp(&row[a]).unwrap());
+                            let top: Vec<String> = idx.iter().take(5)
+                                .map(|&j| format!("{}({:.2})", chars[j], row[j]))
+                                .collect();
+                            let mxch = chars[idx[0]].clone();
+                            eprintln!("[emit] 槽{k} max={:.2} top5={:?}", mx[k], top);
+                            let _ = mxch;
+                        }
+                    }
                     g.slot_max = mx;
                     g.logits = Some(flat);
                 } else {
