@@ -38,6 +38,7 @@ jobs:
           WXQ_BIN: ${{ github.workspace }}/open/hanhuo_open.bin
         run: python3 tools/snapshot.py /tmp/snap_ci.jsonl
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: golden-snapshot-ci
           path: /tmp/snap_ci.jsonl
