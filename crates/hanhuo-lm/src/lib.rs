@@ -26,4 +26,8 @@ pub mod bgrm_safetensors;
 /// 规格源=官方 README+test_vectors）——candle 纯 Rust 前向。
 #[cfg(feature = "zhiyi")]
 pub mod zhiyi;
+/// 自训 P2C 拼音→汉字生成模型推理（长句召回战役主件;
+/// 权重契约=tools/train_p2c.py 导出）。
+#[cfg(feature = "zhiyi")]
+pub mod p2c;
 
