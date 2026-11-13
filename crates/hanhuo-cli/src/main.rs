@@ -345,6 +345,11 @@ fn zhiyi_emit_score(
         g.byte_off = byte_off;
         let (ids, units, slots) =
             g.m.continuation_sequence(&g.ctx, &sylls);
+        if std::env::var("EMIT_DBG").is_ok() {
+            eprintln!("[emit-seq] sylls={sylls:?} slots={slots:?}");
+            eprintln!("[emit-seq] units@slots={:?}", slots.iter().map(|&s| units[s]).collect::<Vec<_>>());
+            eprintln!("[emit-seq] ids_len={} 前缀ids={:?}", ids.len(), &ids[..ids.len().min(14)]);
+        }
         match g.net.forward_continuation(&ids, &units, &slots) {
             Ok(t) => {
                 if let Ok(flat) =

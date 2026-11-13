@@ -1157,6 +1157,46 @@ mod tests {
         );
     }
 
+    /// continuation_sequence 构造对拍（盲区补测: case5-7 对拍走的是
+    /// 官方 ids 直喂——构造函数本身此前未对拍。已证逐位一致;
+    /// 「槽错位疑云」同轮证伪——cankaishizheng 案分布是模型真实
+    /// 判断（「（实验）室开始整」）, 非 unit 错位）。
+    #[test]
+    #[ignore = "真机 zhiyi 包"]
+    fn zhiyi_continuation_sequence_parity() {
+        let dir = std::env::var("ZHIYI_DIR")
+            .unwrap_or_else(|_| "/mnt/s790/tmp/zhiyi-orig".into());
+        let m = ZhiyiModel::open(std::path::Path::new(&dir))
+            .expect("载入失败");
+        // case5: ctx=明天早上八点, 音节 wo men zai xue xiao men kou
+        // jian mian（9 槽）
+        let sylls: Vec<String> = ["wo", "men", "zai", "xue", "xiao",
+            "men", "kou", "jian", "mian"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let (ids, units, slots) =
+            m.continuation_sequence("明天早上八点", &sylls);
+        use safetensors::SafeTensors;
+        let raw = std::fs::read(
+            std::path::Path::new(&dir).join("test_vectors.safetensors"),
+        )
+        .unwrap();
+        let st = SafeTensors::deserialize(&raw).unwrap();
+        // i64 张量按 u32 读会交错 (id,0)——拆偶位
+        let iv = st.tensor("5.input_ids").unwrap();
+        let want: Vec<u32> = iv.data()
+            .chunks_exact(8)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        if std::env::var("ZHIYI_DBG").is_ok() {
+            eprintln!("[cont-seq] got  {ids:?}");
+            eprintln!("[cont-seq] want {want:?}");
+            eprintln!("[cont-seq] units {units:?} slots {slots:?}");
+        }
+        assert_eq!(ids, want, "case5 continuation 序列构造");
+    }
+
     /// 阶段⑤ 端到端效果验证: 406 句电池 × 引擎宽档 top30 ×
     /// 知意重排（纯序口径, 不写回引擎分）vs 基线。
     /// battery.jsonl = {py, gold, ctx, cands:[{w,r,k}]}。
