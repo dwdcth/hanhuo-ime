@@ -62,7 +62,13 @@ def val2_to_alpha(v2: int) -> float:
 
 
 def freq_to_val(freq: float, total: float) -> int:
-    """词频 → val1（P = freq/total 归一后走原厂量化）"""
+    """词频 → val1（P = freq/total 归一后走原厂量化）。
+
+    跨环境确定性律（2026-11-13 CI golden 592/611 案定谳）: math.log10
+    的 glibc 实现差末 ulp, 词频落在量化边界（-lg·1024 恰近半整数）时
+    round 翻档 → CI 与本地 bin 字节差 → 面板分漂移。边界带（距半整数
+    <1e-6）改 Decimal 定点重算（纯整数算法, 跨环境逐位确定）。
+    """
     if freq <= 0 or total <= 0:
         return VMAX
     import math
@@ -72,6 +78,18 @@ def freq_to_val(freq: float, total: float) -> int:
     lg = math.log10(p)
     if lg < -12.232:
         lg = -12.232
+    x = -lg * QUANT
+    frac = x - (x // 1.0)  # 小数部分
+    edge = frac < 1e-6 or frac > 1.0 - 1e-6 or abs(frac - 0.5) < 1e-6
+    if edge:
+        from decimal import Decimal, getcontext, ROUND_HALF_EVEN
+        getcontext().prec = 40
+        lg_d = (Decimal(freq) / Decimal(int(total))).log10()
+        lg_d = min(Decimal(0), lg_d)  # p>=1 → 0（同上分支语义）
+        if lg_d < Decimal('-12.232'):
+            lg_d = Decimal('-12.232')
+        n = int((-lg_d * QUANT).to_integral_value(rounding=ROUND_HALF_EVEN))
+        return n_to_val(n)
     return log10p_to_val(lg)
 
 

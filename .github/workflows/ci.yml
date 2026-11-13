@@ -26,4 +26,5 @@ jobs:
           pip install numpy
           # 词典构建（仓内钉版源 data/rimeice_cn——行为全锁定）
           python3 tools/open_build.py
+          md5sum open/hanhuo_open.bin
           target/release/hanhuo golden golden/open_golden.jsonl
