@@ -1190,10 +1190,19 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
     // P2C 生成面注入（B2.7 律: 在场提权/缺席注入 top+0.5−0.01i;
     // 青简律: P2C 分只排名——注入分是钉序呈现位, 不代表跨键串可比）
     if !p2c_gens.is_empty() {
-        let top = cs.first().map(|c| c.score).unwrap_or(0.0);
+        // v2 注入律（v1 top1 归零教训）: P2C 候选不抢头位——挂在引擎
+        // sentence 首位之下作多样性补位（top_sent−0.1−0.01i）; 在场词
+        // 提权同带。青简「生成句排词图整句前」的前提是其生成质量
+        // 够（51.9%）, 质量未达标前补位不顶替——A/B 验证后再议升顶。
+        let top_sent = cs
+            .iter()
+            .find(|c| c.kind == hanhuo_core::Kind::Sentence)
+            .map(|c| c.score)
+            .or_else(|| cs.first().map(|c| c.score))
+            .unwrap_or(0.0);
         let mut injected = false;
         for (i, (t, _sc)) in p2c_gens.iter().take(5).enumerate() {
-            let target = top + 0.5 - 0.01 * i as f64;
+            let target = top_sent - 0.1 - 0.01 * i as f64;
             match cs.iter_mut().find(|c| c.word == *t) {
                 Some(c) => {
                     if c.score < target {
