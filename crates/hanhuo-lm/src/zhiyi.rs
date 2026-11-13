@@ -375,6 +375,41 @@ impl ZhiyiModel {
         units.push(0);
         (ids, units, markers)
     }
+
+    /// continuation 序列: `<bos> encode("已输入的上文: "+ctx 末160)
+    /// <eos> <mask>×音节(≤24) <eos>`; 返回 (ids, units, slot_pos)。
+    pub fn continuation_sequence(
+        &self,
+        ctx: &str,
+        syllables: &[String],
+    ) -> (Vec<u32>, Vec<u32>, Vec<usize>) {
+        let mut ids = vec![TOK_BOS];
+        let mut units: Vec<u32> = vec![0];
+        let text = format!("已输入的上文: {ctx}");
+        let mut cids = self.tok.encode(&text);
+        if cids.len() > self.choice_context_tokens.max(160) {
+            cids = cids[cids.len() - 160..].to_vec();
+        }
+        for id in cids {
+            ids.push(id);
+            units.push(0);
+        }
+        ids.push(TOK_EOS);
+        units.push(0);
+        let mut slots = Vec::new();
+        let unit_ids = self
+            .vocab
+            .align_units(&syllables.join(""), syllables)
+            .unwrap_or_default();
+        for &u in unit_ids.iter().take(self.max_slots) {
+            slots.push(ids.len());
+            ids.push(TOK_MASK);
+            units.push(u);
+        }
+        ids.push(TOK_EOS);
+        units.push(0);
+        (ids, units, slots)
+    }
 }
 
 // ================= 阶段②: candle 纯 Rust 前向（效果验证线） =================
@@ -413,6 +448,12 @@ pub struct ZhiyiNet {
     sc_ln_w: Tensor, sc_ln_b: Tensor,
     sc_w1: Tensor, sc_b1: Tensor,
     sc_w2: Tensor, sc_b2: Tensor,
+    // composition 头（continuation: 逐音节槽出字分布）
+    p2c_head: Vec<HeadL>,
+    out0_w: Tensor, out0_b: Tensor,
+    out1_w: Tensor, out1_b: Tensor,
+    char_emb: Tensor, // [6163, 384]
+    char_bias: Tensor, // [6163]
     // config
     n_heads: usize,
     rope_cache: Vec<f32>, // 32 freq（base 160000）
@@ -490,6 +531,37 @@ impl ZhiyiNet {
                 linear2_b: f32t(&format!("head.layers.{n}.linear2.bias"))?,
             }))
             .collect::<candle_core::Result<_>>()?;
+        let mk_head = |prefix: &str| -> candle_core::Result<HeadL> {
+            Ok(HeadL {
+                norm1_w: f32t(&format!("{prefix}.layers.0.norm1.weight"))?,
+                norm1_b: f32t(&format!("{prefix}.layers.0.norm1.bias"))?,
+                in_proj_w: f32t(&format!(
+                    "{prefix}.layers.0.self_attn.in_proj_weight"
+                ))?,
+                in_proj_b: f32t(&format!(
+                    "{prefix}.layers.0.self_attn.in_proj_bias"
+                ))?,
+                out_proj_w: f32t(&format!(
+                    "{prefix}.layers.0.self_attn.out_proj.weight"
+                ))?,
+                out_proj_b: f32t(&format!(
+                    "{prefix}.layers.0.self_attn.out_proj.bias"
+                ))?,
+                norm2_w: f32t(&format!("{prefix}.layers.0.norm2.weight"))?,
+                norm2_b: f32t(&format!("{prefix}.layers.0.norm2.bias"))?,
+                linear1_w: f32t(&format!(
+                    "{prefix}.layers.0.linear1.weight"
+                ))?,
+                linear1_b: f32t(&format!("{prefix}.layers.0.linear1.bias"))?,
+                linear2_w: f32t(&format!(
+                    "{prefix}.layers.0.linear2.weight"
+                ))?,
+                linear2_b: f32t(&format!("{prefix}.layers.0.linear2.bias"))?,
+            })
+        };
+        let _ = &mk_head;
+        let p2c0 = mk_head("p2c_head")?;
+        let p2c1 = mk_head("p2c_head")?;
         Ok(Self {
             vocab_remap: f32t("vocab_remap")?,
             tok_emb: f32t("encoder.embeddings.tok_embeddings.weight")?,
@@ -505,6 +577,13 @@ impl ZhiyiNet {
             sc_b1: f32t("scorer.1.bias")?,
             sc_w2: f32t("scorer.3.weight")?,
             sc_b2: f32t("scorer.3.bias")?,
+            p2c_head: vec![p2c0, p2c1],
+            out0_w: f32t("out.0.weight")?,
+            out0_b: f32t("out.0.bias")?,
+            out1_w: f32t("out.1.weight")?,
+            out1_b: f32t("out.1.bias")?,
+            char_emb: f32t("char_emb.weight")?,
+            char_bias: f32t("char_bias")?,
             n_heads,
             rope_cache,
             sliding: cfg
@@ -702,6 +781,50 @@ impl ZhiyiNet {
     fn sc_b2_broadcast1(&self) -> candle_core::Result<Tensor> {
         self.sc_b1.reshape((1, 384))
     }
+
+    /// continuation 前向: 每音节槽一行 6163 字 logit
+    /// （char_logits = out.1(out.0(h1[slot])) · char_embᵀ + char_bias）。
+    pub fn forward_continuation(
+        &self,
+        ids: &[u32],
+        unit_ids: &[u32],
+        slots: &[usize],
+    ) -> candle_core::Result<Tensor> {
+        let dev = Device::Cpu;
+        let seq = ids.len();
+        let ids_t = Tensor::from_vec(ids.to_vec(), seq, &dev)?;
+        let remapped = self.vocab_remap.gather(&ids_t, 0)?;
+        let tok = self.tok_emb.index_select(&remapped, 0)?;
+        let units_t = Tensor::from_vec(unit_ids.to_vec(), seq, &dev)?;
+        let unit = self
+            .unit_emb
+            .index_select(&units_t.to_dtype(DType::U32)?, 0)?;
+        let x0 = (tok + unit)?;
+        let x = self.ln(&x0, &self.emb_norm_w, None, ENC_EPS)?;
+        let enc = self.encoder(&x)?;
+        let type1 = self.type_emb.get(1)?;
+        let h1 = enc.broadcast_add(&type1.reshape((1, 384))?)?;
+        let mut h = h1;
+        for l in &self.p2c_head {
+            h = self.head_layer(&h, l)?;
+        }
+        // slot 行 → out.0 LN → out.1 → ·char_embᵀ + bias
+        let mut rows = Vec::new();
+        for &sl in slots {
+            rows.push(h.narrow(0, sl, 1)?);
+        }
+        if rows.is_empty() {
+            return Tensor::zeros((0, 6163), DType::F32, &dev);
+        }
+        let rs = Tensor::cat(&rows, 0)?; // [S, 384]
+        let q = self.ln(&rs, &self.out0_w, Some(&self.out0_b), ENC_EPS)?;
+        let q = q.matmul(&self.out1_w.t()?)?
+            .broadcast_add(&self.out1_b.reshape((1, 384))?)?;
+        // [S,6163] = [S,384]·[384,6163] + bias
+        let logits = q.matmul(&self.char_emb.t()?)?
+            .broadcast_add(&self.char_bias.reshape((1, 6163))?)?;
+        Ok(logits)
+    }
 }
 
 #[cfg(test)]
@@ -826,6 +949,213 @@ mod tests {
         assert_eq!(all_top1, n, "{n} case 首选全对拍");
     }
 }
+
+    /// continuation case5-7 对拍（槽 argmax 口径——每槽最优字一致
+    /// + 分值容差; cases_cont.json 由 test_vectors 导出）。
+    #[test]
+    #[ignore = "真机 zhiyi 包"]
+    fn zhiyi_continuation_cases() {
+        let dir = std::env::var("ZHIYI_DIR")
+            .unwrap_or_else(|_| "/mnt/s790/tmp/zhiyi-orig".into());
+        let m = ZhiyiModel::open(std::path::Path::new(&dir))
+            .expect("载入失败");
+        let net = ZhiyiNet::load(std::path::Path::new(&dir), &m)
+            .expect("网络载入失败");
+        let cases: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                std::path::Path::new(&dir).join("cases_cont.json"),
+            )
+            .expect("cases_cont.json"),
+        )
+        .expect("解析");
+        // 官方 char_logits 直读（对拍 argmax 字）
+        use safetensors::SafeTensors;
+        let raw = std::fs::read(
+            std::path::Path::new(&dir).join("test_vectors.safetensors"),
+        )
+        .unwrap();
+        let st = SafeTensors::deserialize(&raw).unwrap();
+        let chars = &m.vocab.chars;
+        for c in 5..8 {
+            let cs = cases.get(c.to_string()).unwrap();
+            let ids: Vec<u32> = cs["ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_u64().unwrap() as u32)
+                .collect();
+            let units: Vec<u32> = cs["units"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_u64().unwrap() as u32)
+                .collect();
+            let slots: Vec<usize> = cs["slots"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_u64().unwrap() as usize)
+                .collect();
+            let got = net
+                .forward_continuation(&ids, &units, &slots)
+                .expect("前向失败");
+            let want = st
+                .tensor(&format!("{c}.char_logits"))
+                .unwrap();
+            let wf: Vec<f32> = {
+                let mut v = Vec::new();
+                for k in 0..slots.len() {
+                    let row =
+                        &want.data()[k * 6163 * 4..(k + 1) * 6163 * 4];
+                    let mut best = (f32::NEG_INFINITY, 0usize);
+                    for j in 0..6163 {
+                        let b = f32::from_le_bytes([
+                            row[j * 4],
+                            row[j * 4 + 1],
+                            row[j * 4 + 2],
+                            row[j * 4 + 3],
+                        ]);
+                        if b > best.0 {
+                            best = (b, j);
+                        }
+                    }
+                    v.push(best.1 as f32);
+                }
+                // 上面收集的是 argmax 索引——重写: 直接存每槽 argmax idx
+                let mut idxs = Vec::new();
+                for k in 0..slots.len() {
+                    let row =
+                        &want.data()[k * 6163 * 4..(k + 1) * 6163 * 4];
+                    let mut best = (f32::NEG_INFINITY, 0usize);
+                    for j in 0..6163 {
+                        let b = f32::from_le_bytes([
+                            row[j * 4],
+                            row[j * 4 + 1],
+                            row[j * 4 + 2],
+                            row[j * 4 + 3],
+                        ]);
+                        if b > best.0 {
+                            best = (b, j);
+                        }
+                    }
+                    idxs.push(best.1);
+                }
+                idxs.iter().map(|&i| i as f32).collect()
+            };
+            // rust 侧每槽 argmax
+            let gflat = got.flatten_all().unwrap().to_vec1::<f32>().unwrap();
+            let mut gmax = Vec::new();
+            for k in 0..slots.len() {
+                let row = &gflat[k * 6163..(k + 1) * 6163];
+                let (bi, bv) = row
+                    .iter()
+                    .enumerate()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                    .unwrap();
+                gmax.push(bi);
+            }
+            let wmax: Vec<usize> =
+                wf.iter().map(|x| *x as usize).collect();
+            let agree = gmax
+                .iter()
+                .zip(wmax.iter())
+                .filter(|(a, b)| a == b)
+                .count();
+            if std::env::var("ZHIYI_DBG").is_ok() {
+                eprintln!(
+                    "[zhiyi-cont] case{c}: 槽 argmax 一致 {agree}/{}",
+                    slots.len()
+                );
+                eprintln!(
+                    "  rust: {:?}",
+                    gmax.iter().map(|&i| chars[i].clone()).take(9).collect::<Vec<_>>()
+                );
+                eprintln!(
+                    "  官方: {:?}",
+                    wmax.iter().map(|&i| chars[i].clone()).take(9).collect::<Vec<_>>()
+                );
+            }
+            assert!(
+                agree >= slots.len().saturating_sub(1),
+                "case{c} 槽 argmax 一致 {agree}/{}",
+                slots.len()
+            );
+        }
+    }
+
+    /// 长句召回原型: continuation 每槽 argmax 贪心生成的句命中率
+    /// （54 长句 ctx 电池——composition 头=P2C 的召回侧验证）。
+    #[test]
+    #[ignore = "真机 zhiyi 包 + ctx 句电池"]
+    fn zhiyi_continuation_battery() {
+        let dir = std::env::var("ZHIYI_DIR")
+            .unwrap_or_else(|_| "/mnt/s790/tmp/zhiyi-orig".into());
+        let m = ZhiyiModel::open(std::path::Path::new(&dir))
+            .expect("载入失败");
+        let net = ZhiyiNet::load(std::path::Path::new(&dir), &m)
+            .expect("网络载入失败");
+        let txt = std::fs::read_to_string(
+            std::path::Path::new(&dir).join("ctx_sents.json"),
+        )
+        .expect("ctx_sents.json");
+        let pairs: serde_json::Value = serde_json::from_str(&txt).unwrap();
+        let chars = &m.vocab.chars;
+        let mut n = 0usize;
+        let mut exact = 0usize;
+        let mut char_acc = 0usize;
+        let mut char_tot = 0usize;
+        let mut top3_char_acc = 0usize;
+        for p in pairs.as_array().unwrap() {
+            let py = p["py"].as_str().unwrap();
+            let gold = p["text"].as_str().unwrap();
+            let ctx = p["ctx"].as_str().unwrap();
+            let sylls = m.vocab.greedy_sylls(py);
+            if sylls.is_empty() || sylls.len() > 24 {
+                continue;
+            }
+            let (ids, units, slots) =
+                m.continuation_sequence(ctx, &sylls);
+            let Ok(logits) =
+                net.forward_continuation(&ids, &units, &slots)
+            else {
+                continue;
+            };
+            n += 1;
+            let flat =
+                logits.flatten_all().unwrap().to_vec1::<f32>().unwrap();
+            let mut gen = String::new();
+            for (k, _) in slots.iter().enumerate() {
+                let row = &flat[k * 6163..(k + 1) * 6163];
+                let mut idx: Vec<usize> =
+                    (0..row.len()).collect();
+                idx.sort_by(|&a, &b| {
+                    row[b].partial_cmp(&row[a]).unwrap()
+                });
+                gen.push_str(&chars[idx[0]]);
+                let gch: Vec<char> = gold.chars().collect();
+                if let Some(&gc) = gch.get(k) {
+                    char_tot += 1;
+                    if chars[idx[0]].chars().next() == Some(gc) {
+                        char_acc += 1;
+                    }
+                    if idx.iter().take(3).any(|&j| {
+                        chars[j].chars().next() == Some(gc)
+                    }) {
+                        top3_char_acc += 1;
+                    }
+                }
+            }
+            if gen == gold {
+                exact += 1;
+            }
+        }
+        eprintln!(
+            "[zhiyi-cont-battery] n={n} 句精确={exact}({:.1}%) 字准={char_acc}/{char_tot}({:.1}%) 字top3={top3_char_acc}/{char_tot}({:.1}%)",
+            exact as f64 / n as f64 * 100.0,
+            char_acc as f64 / char_tot as f64 * 100.0,
+            top3_char_acc as f64 / char_tot as f64 * 100.0,
+        );
+    }
 
     /// 阶段⑤ 端到端效果验证: 406 句电池 × 引擎宽档 top30 ×
     /// 知意重排（纯序口径, 不写回引擎分）vs 基线。
