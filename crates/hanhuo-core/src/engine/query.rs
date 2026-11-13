@@ -211,6 +211,7 @@ impl Engine {
 
         let meta_n_words = n_words;
         Ok(Engine {
+            emission_hook: RefCell::new(None),
             boost: None,
             t9: false,
             bwcn: std::cell::RefCell::new(Vec::new()),
@@ -2246,6 +2247,35 @@ impl Engine {
         Ok(())
     }
 
+    /// 神经 emission 钩子注入（召回侧武器位: 知意 composition 头等
+    /// 逐槽字分布件经闭包接入——(词面, 槽起, 槽数) → 加分; None=零行为）。
+    pub fn set_emission_hook(
+        &self,
+        f: Option<Box<dyn Fn(&str, usize, usize) -> f64 + Send>>,
+    ) {
+        *self.emission_hook.borrow_mut() = f;
+    }
+
+    /// emission 加分查询（段格边分消费; 词面×字节起×音节数 → 加分,
+    /// 槽位映射由闭包侧自算; 无钩子 0.0）。
+    pub(super) fn emission_bonus(
+        &self,
+        word: &str,
+        byte_start: usize,
+        n_syl: usize,
+    ) -> f64 {
+        let g = self.emission_hook.borrow();
+        match g.as_ref() {
+            Some(f) => f(word, byte_start, n_syl),
+            None => 0.0,
+        }
+    }
+
+    /// 钩子在场查询（段格边构建的零开销短路门）。
+    pub(super) fn emission_hook_active(&self) -> bool {
+        self.emission_hook.borrow().is_some()
+    }
+
     pub fn attach_ckvd(&self, path: &std::path::Path) -> bool {
         match hanhuo_dict::CkvdPhrases::from_file(path) {
             Ok(c) => {
@@ -3213,6 +3243,7 @@ mod tests {
             now_override: std::cell::Cell::new(None),
             boost: None,
             t9: false,
+            emission_hook: RefCell::new(None),
             t9_sig_v: RefCell::new(None),
             bwcn: std::cell::RefCell::new(Vec::new()),
             pack: Pack { bytes: &[], ver: 3, dir: HashMap::new() },

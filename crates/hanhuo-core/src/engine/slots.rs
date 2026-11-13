@@ -713,6 +713,7 @@ mod tests {
             slot_wc_v: RefCell::new(None),
             sylw: Vec::new(),
             user: RefCell::new(None),
+            emission_hook: RefCell::new(None),
             poly: RefCell::new(None),
             nnlm: RefCell::new(None),
             #[cfg(feature = "safetensors")]

@@ -310,6 +310,92 @@ fn positional(args: &[String]) -> Option<String> {
     None
 }
 
+/// 知意 emission 状态（composition 头槽字分布; 惰性单次前向缓存）。
+struct ZhiyiEmit {
+    m: hanhuo_lm::zhiyi::ZhiyiModel,
+    net: hanhuo_lm::zhiyi::ZhiyiNet,
+    logits: Option<Vec<f32>>,   // 展平 [slot*6163]
+    slot_max: Vec<f32>,
+    byte_off: Vec<usize>,       // 槽字节偏移（byte_off[k]=槽 k 起点）
+    ch_idx: std::collections::HashMap<char, usize>,
+    ctx: String,
+    inp: String,
+}
+
+fn zhiyi_emit_score(
+    st: &std::sync::Arc<std::sync::Mutex<ZhiyiEmit>>,
+    word: &str,
+    bstart: usize,
+    nsyl: usize,
+) -> f64 {
+    let mut g = st.lock().unwrap();
+    if g.logits.is_none() {
+        // 惰性初始化: 贪心切分 + continuation 前向（一次）
+        let sylls = g.m.vocab.greedy_sylls(&g.inp);
+        if sylls.is_empty() || sylls.len() > 24 {
+            g.logits = Some(Vec::new()); // 空标记=禁用
+            return 0.0;
+        }
+        let mut byte_off = Vec::new();
+        let mut pos = 0usize;
+        for s in &sylls {
+            byte_off.push(pos);
+            pos += s.len();
+        }
+        g.byte_off = byte_off;
+        let (ids, units, slots) =
+            g.m.continuation_sequence(&g.ctx, &sylls);
+        match g.net.forward_continuation(&ids, &units, &slots) {
+            Ok(t) => {
+                if let Ok(flat) =
+                    t.flatten_all().and_then(|x| x.to_vec1::<f32>())
+                {
+                    let n_slot = slots.len();
+                    let mut mx = vec![f32::NEG_INFINITY; n_slot];
+                    for k in 0..n_slot {
+                        for j in 0..6163 {
+                            let v = flat[k * 6163 + j];
+                            if v > mx[k] {
+                                mx[k] = v;
+                            }
+                        }
+                    }
+                    g.slot_max = mx;
+                    g.logits = Some(flat);
+                } else {
+                    g.logits = Some(Vec::new());
+                }
+            }
+            Err(_) => g.logits = Some(Vec::new()),
+        }
+    }
+    let flat = match g.logits.as_ref() {
+        Some(v) if !v.is_empty() => v,
+        _ => return 0.0,
+    };
+    // 字节起 → 槽号（边界表二分）
+    let slot0 = match g.byte_off.binary_search(&bstart) {
+        Ok(k) => k,
+        Err(_) => return 0.0, // 非音节边界（理论不到）
+    };
+    // 词的字（音节数=字数）逐槽 emission 加分
+    // （青简律: 0.5×(logit − slot_max), 下限 −12）
+    let mut total = 0f64;
+    for (k, ch) in word.chars().enumerate() {
+        let Some(&ci) = g.ch_idx.get(&ch) else {
+            return 0.0; // 6163 外字——不罚不奖
+        };
+        let slot = slot0 + k;
+        if slot >= g.slot_max.len() {
+            return 0.0;
+        }
+        let lg = flat[slot * 6163 + ci] as f64;
+        let d = 0.5 * (lg - g.slot_max[slot] as f64);
+        total += d.max(-12.0);
+    }
+    total
+}
+
 /// 知意双条件重排（呈现层）: py+ctx 双条件对 top16 候选按模型分
 /// 稳定降序（同分保持引擎序）; 其余候选垫后原序。青简律——只改
 /// 呈现名次, 不写回 Cand.score（跨读法比较域不受污染）。
@@ -684,6 +770,7 @@ fn cmd_eval(bin: &Path, args: &[String]) -> i32 {
     attach_model_files(&mut e, args);
     attach_dicts(&e, args);
     wire_boost(&mut e, args);
+
     if has_flag(args, "--no-fuzz") {
         e.set_fuzz_mode(hanhuo_core::engine::FUZZ_OFF);
     }
@@ -877,6 +964,47 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
         e.attach_user(&up);
     }
     wire_boost(&mut e, args);
+
+    // 知意 emission 钩子（--zhiyi-emit <dir>: composition 头槽字分布
+    // → B8 段格边加分——召回侧; ctx 缺席/切分失败/前向败=零行为）
+    if let Some(zdir) = flag_val(args, "--zhiyi-emit") {
+        if let Some(ct) = ctx.as_deref().filter(|c| !c.is_empty()) {
+            if let Some(m) =
+                hanhuo_lm::zhiyi::ZhiyiModel::open(Path::new(&zdir))
+            {
+                if let Ok(net) =
+                    hanhuo_lm::zhiyi::ZhiyiNet::load(Path::new(&zdir), &m)
+                {
+                    let ch_idx: std::collections::HashMap<char, usize> =
+                        m.vocab
+                            .chars
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, c)| {
+                                c.chars().next().map(|ch| (ch, i))
+                            })
+                            .collect();
+                    let st = std::sync::Arc::new(
+                        std::sync::Mutex::new(ZhiyiEmit {
+                            m,
+                            net,
+                            logits: None,
+                            slot_max: Vec::new(),
+                            byte_off: Vec::new(),
+                            ch_idx,
+                            ctx: ct.to_string(),
+                            inp: inp.clone(),
+                        }),
+                    );
+                    e.set_emission_hook(Some(Box::new(
+                        move |word: &str, b: usize, n: usize| {
+                            zhiyi_emit_score(&st, word, b, n)
+                        },
+                    )));
+                }
+            }
+        }
+    }
     // B2.9 模糊音设置位（真 IME 语义; --no-fuzz 关闭——科学臂/口径对照）
     if has_flag(args, "--no-fuzz") {
         e.set_fuzz_mode(hanhuo_core::engine::FUZZ_OFF);

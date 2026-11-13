@@ -161,6 +161,10 @@ pub struct Engine {
     // M3: 用户词学习库（可选挂载）
     user: RefCell<Option<UserDict>>,
     poly: RefCell<Option<HashSet<u32>>>,
+    /// 神经 emission 打分钩子（召回侧武器位: 知意 composition 头等
+    /// 逐槽字分布件经 CLI 闭包注入——core 不感知具体模型, 只消费
+    /// 「(词面, 槽起, 槽数) → 加分」; B8 段格边分叠加。None=零行为。
+    emission_hook: RefCell<Option<Box<dyn Fn(&str, usize, usize) -> f64 + Send>>>,
     // M4: NNLM（惰性解析）
     nnlm: RefCell<Option<Box<Nnlm>>>,
     /// 高级版 NNLM（nlrgpt2, 开放格式注入; 分体布局同 nnlm 惰性槽,

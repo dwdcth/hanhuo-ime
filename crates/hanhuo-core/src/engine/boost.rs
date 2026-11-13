@@ -367,7 +367,25 @@ pub(super) fn sentence_seg_variants(
                 continue;
             }
             let w = e.wlist_at(o0);
-            edges[i].push((i + depth, Piece::Rid(lo), e.slot_logp(w, o0)));
+            // 神经 emission 加分（召回侧武器位: 知意 composition 头等
+            // 逐槽字分布件经 set_emission_hook 注入——词面×字节起×
+            // 音节数 → 加分叠加到段格边分; 无钩子 0.0 零行为）
+            let bonus = if e.emission_hook_active() {
+                let word = e.word_text(w);
+                let nsyl = e
+                    .rid_variants(lo)
+                    .first()
+                    .map(|v| v.len())
+                    .unwrap_or(1);
+                e.emission_bonus(&word, i, nsyl)
+            } else {
+                0.0
+            };
+            edges[i].push((
+                i + depth,
+                Piece::Rid(lo),
+                e.slot_logp(w, o0) + bonus,
+            ));
         }
     }
     // B2w-sent 域词边（§2）: 位段子串精确查 bwcn（HashMap 零成本）;
