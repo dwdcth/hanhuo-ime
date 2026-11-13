@@ -741,6 +741,18 @@ pub(super) fn sentence_seg_variants(
     picked
         .into_iter()
         .map(|(s, t)| {
+            // 神经 emission 面分合成（召回侧闭环: 段格边选择之外,
+            // 变体终分同吃槽字分布——「参考实证」类真词路径的 logP 域
+            // 劣势由 emission 补偿; 无钩子零行为）。
+            let s = if e.emission_hook_active() {
+                s + e.emission_bonus(
+                    &t,
+                    0,
+                    t.chars().count(),
+                )
+            } else {
+                s
+            };
             let mut c = Cand::new(t, s, crate::Kind::Sentence);
             c.score = s; // 显示/调试位（B2.5 同律; B7 重排会重锚）
             c.logp = s;

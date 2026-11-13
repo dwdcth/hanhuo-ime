@@ -966,7 +966,11 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
     wire_boost(&mut e, args);
 
     // 知意 emission 钩子（--zhiyi-emit <dir>: composition 头槽字分布
-    // → B8 段格边加分——召回侧; ctx 缺席/切分失败/前向败=零行为）
+    // → B8 段格边加分+变体面分合成+主管线呈现层罚——召回侧闭环;
+    // ctx 缺席/切分失败/前向败=零行为）
+    let mut emit_state: Option<
+        std::sync::Arc<std::sync::Mutex<ZhiyiEmit>>,
+    > = None;
     if let Some(zdir) = flag_val(args, "--zhiyi-emit") {
         if let Some(ct) = ctx.as_deref().filter(|c| !c.is_empty()) {
             if let Some(m) =
@@ -996,11 +1000,13 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
                             inp: inp.clone(),
                         }),
                     );
+                    let st_hook = st.clone();
                     e.set_emission_hook(Some(Box::new(
                         move |word: &str, b: usize, n: usize| {
-                            zhiyi_emit_score(&st, word, b, n)
+                            zhiyi_emit_score(&st_hook, word, b, n)
                         },
                     )));
+                    emit_state = Some(st);
                 }
             }
         }
@@ -1142,11 +1148,25 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
     // 知意双条件重排（--zhiyi <dir>: 词级语境场景 +14.4pp 实证——v4
     // 298 案 56.7→71.1）; 呈现层重排（青简律: 只排名次不写回引擎分
     // 域——跨读法门槛不受触）。ctx 缺席/模型缺席/前向失败=原序零行为。
-    let cs = if let Some(zdir) = flag_val(args, "--zhiyi") {
+    let mut cs = if let Some(zdir) = flag_val(args, "--zhiyi") {
         zhiyi_rerank(cs0, ctx.as_deref(), &zdir, &inp)
     } else {
         cs0
     };
+    // emission 呈现层罚（--zhiyi-emit 的主管线面闭环: sentence 类候选
+    // 补槽字分布罚——与段格变体的合成分同域, 「餐开始整」类单字贪心
+    // 面被罚下沉, 真词路径浮出; 非句类/无状态零行为）
+    if let Some(st) = &emit_state {
+        let bonus = |w: &str| -> f64 {
+            zhiyi_emit_score(st, w, 0, w.chars().count())
+        };
+        // 【实验快照 2026-11-13】出口层 emission 罚/重排已试三型
+        // （全域加分序/sentence 组内加分序/组内纯 emission 序）——
+        // 与查询内边分+变体合成分叠加后 sentence 面被打崩（域校准
+        // 未解, 青简「各乘 0.5」调和待移植）。出口层暂禁, 保留查询
+        // 内两处接线（边分+变体面分合成）。
+        let _ = &bonus;
+    }
     if json {
         let items: Vec<serde_json::Value> = cs
             .iter()
