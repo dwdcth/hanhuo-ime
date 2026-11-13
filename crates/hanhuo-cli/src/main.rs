@@ -955,6 +955,7 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
                     "logp": round4(c.logp), "score": round4(c.score),
                     "kind": c.kind.as_str(),
                     "lm": c.lm.map(round4),
+                    "ltr": c.ltr.map(round4),
                 })
             })
             .collect();
@@ -1069,6 +1070,7 @@ fn cmd_aux(
                     "logp": round4(c.logp), "score": round4(c.score),
                     "kind": c.kind.as_str(),
                     "lm": c.lm.map(round4),
+                    "ltr": c.ltr.map(round4),
                 })
             })
             .collect();
@@ -1756,8 +1758,11 @@ mod tests {
         assert_eq!(cmd_golden(&bin, &args), 0, "golden 对照未全过");
     }
 
-    /// mix_recall MLP 前向数值锚（agentO_log S6; 期望值 = python
-    /// wxq.engine.mix_recall_forward 全精度 f64 输出, 要求逐位一致）
+    /// mix_recall MLP 前向数值锚（agentO_log S6; 原期望值 = python
+    /// wxq.engine.mix_recall_forward 腾讯权重的 f64 输出——开源发布
+    /// MIX_RECALL 常量权重全零（Correct 通道分布为零行为不变）后
+    /// 前向恒 tanh(0)=0。本测试在开源仓锁「置零律」; 腾讯权重位锚
+    /// 见私有研究线同名测试。
     #[test]
     fn mix_recall_forward_anchors() {
         use hanhuo_core::mix_recall_forward;
@@ -1767,12 +1772,10 @@ mod tests {
         let ya = mix_recall_forward(&a);
         let yb = mix_recall_forward(&b);
         let yz = mix_recall_forward(&z);
-        // f64 末位锚（1e-12 容差）: libm tanh 代码生成随工具链差
-        // 末 ulp（本机 1.99.1 实测 Z 差 3e-16）——锚语义=数值锁非位锁
-        let near = |x: f64, a: f64| (x - a).abs() < 1e-12;
-        assert!(near(ya, -1.4386620578121514), "anchor A: {ya:?}");
-        assert!(near(yb, -1.7428965783391757), "anchor B: {yb:?}");
-        assert!(near(yz, 0.9751279048019776), "anchor Z: {yz:?}");
+        // 置零律: 权重零化 → 前向恒 0（含偏置零——开源发布定版语义）
+        assert_eq!(ya, 0.0, "anchor A: {ya:?}");
+        assert_eq!(yb, 0.0, "anchor B: {yb:?}");
+        assert_eq!(yz, 0.0, "anchor Z: {yz:?}");
     }
 }
 

@@ -152,6 +152,7 @@ pub(crate) fn sub_insert_pairs(
 use crate::engine::{Cand, Kind};
 use super::boost;
 use crate::Engine;
+use crate::dat::ROOT;
 
 // ===================== B2.9 模糊音变体（n↔ng / z⇄zh…） =====================
 
@@ -384,6 +385,46 @@ impl Engine {
             // 充满/冲满, dp=true 多罕字列 沌/铳/蟲——前者不劣）; 回退只在
             // 变体池空=不可修死输入时触发, 修复面窄。
             return self.query(inp, ctx, false, topk, nn, ltr, false);
+        }
+        // B2.7c 变体域简拼接管（boost 域产品增强）: 不可切分输入恰为
+        // 简拼表键（sm→什么）时, 变体面（邻键改写 s→a/e/o）覆写简拼
+        // 意图——原始 query(inp) 本体在此分支永不返回, 主管线 B2.7
+        // 注入段收不到。简拼整键命中=强意图信号, B2.7 律置顶注入到
+        // 变体池（音节意图门: 全串 terminal 如 ma/ke 不接管——音节
+        // 优先, ma→母爱 是误伤）。忠实门（无 boost）零行为。
+        if self.boost.as_ref().is_some_and(|b| b.jianpin_inject) {
+            let st = self.dat.walk(inp.as_bytes(), ROOT);
+            if !(st >= 0 && self.dat.is_terminal(st)) {
+                let hits = self.jianpin_key_hits(inp);
+                if !hits.is_empty() {
+                    let top = pool.first().map(|c| c.score).unwrap_or(0.0);
+                    let mut injected = false;
+                    for (i, h) in hits.into_iter().take(6).enumerate() {
+                        let target = top + 0.5 - 0.01 * i as f64;
+                        match pool.iter_mut().find(|x| x.word == h.word) {
+                            Some(x) => {
+                                if x.score < target {
+                                    x.score = target;
+                                    injected = true;
+                                }
+                            }
+                            None => {
+                                let mut h = h;
+                                h.score = target;
+                                pool.push(h);
+                                injected = true;
+                            }
+                        }
+                    }
+                    if injected {
+                        pool.sort_by(|a, b| {
+                            b.score.partial_cmp(&a.score).unwrap_or(
+                                std::cmp::Ordering::Equal,
+                            )
+                        });
+                    }
+                }
+            }
         }
         pool.sort_by(|a, b| {
             b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
@@ -874,7 +915,7 @@ mod tests {
     fn engine() -> Engine {
         let bin = std::env::var("WXQ_BIN").unwrap_or_else(|_| {
             format!(
-                "{}/tmp/hanhuo/wxq_dict.bin",
+                "{}/tmp/wetype-win/wxq_dict.bin",
                 std::env::var("HOME").unwrap()
             )
         });

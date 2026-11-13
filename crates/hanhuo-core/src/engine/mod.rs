@@ -433,10 +433,12 @@ mod tests {
 
     /// 输出被 tanh 隐层幅值严格夹住:
     /// y ∈ (b_out − Σ_{j<5}|out_j|, b_out + Σ_{j<5}|out_j|)（tanh ∈ (−1,1) 开区间）
+    /// 开源置零态（amp=0 → 区间退化为点 0）: 闭区间含等断言。
     #[test]
     fn mix_recall_output_strictly_bounded() {
         let amp: f64 = MIX_RECALL_OUT.iter().take(5).map(|v| v.abs()).sum();
         let (lo, hi) = (MIX_RECALL_OUT[5] - amp, MIX_RECALL_OUT[5] + amp);
+        let open = amp > 0.0; // 置零态区间塌缩 → 闭区间语义
         let mut cases: Vec<[f64; 8]> = vec![
             [0.0; 8],
             [3.0, -2.0, 1.5, 7.0, -8.0, 0.25, -11.0, 4.0],
@@ -450,7 +452,12 @@ mod tests {
         }
         for x in &cases {
             let y = mix_recall_forward(x);
-            assert!(y > lo && y < hi, "x={x:?} y={y} 越界 ({lo}, {hi})");
+            let ok = if open {
+                y > lo && y < hi
+            } else {
+                (lo..=hi).contains(&y)
+            };
+            assert!(ok, "x={x:?} y={y} 越界 ({lo}, {hi})");
         }
     }
 
@@ -477,13 +484,18 @@ mod tests {
 
     /// 极端输入不产生 NaN: 单轴 ±inf（无 0×inf 项, 权重全非零）各自
     /// 饱和收敛; 全幅 ±1e300 列和有界（|w|<1 → 部分和 < f64::MAX）
+    /// 开源置零态: 权重零 × ±inf = NaN 是 IEEE 语义（非缺陷）→ 跳过
+    /// 单轴 inf 段, 保留 1e300 有界段（0×有限=0 恒有限）。
     #[test]
     fn mix_recall_extreme_inputs_stay_finite() {
-        for i in 0..8 {
-            for &v in &[f64::INFINITY, f64::NEG_INFINITY] {
-                let mut x = [0.0f64; 8];
-                x[i] = v;
-                assert!(mix_recall_forward(&x).is_finite(), "轴 {i} = {v}");
+        let zeroed = MIX_RECALL_W.iter().all(|r| r.iter().all(|&v| v == 0.0));
+        if !zeroed {
+            for i in 0..8 {
+                for &v in &[f64::INFINITY, f64::NEG_INFINITY] {
+                    let mut x = [0.0f64; 8];
+                    x[i] = v;
+                    assert!(mix_recall_forward(&x).is_finite(), "轴 {i} = {v}");
+                }
             }
         }
         assert!(mix_recall_forward(&[1e300; 8]).is_finite());

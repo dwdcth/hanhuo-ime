@@ -73,7 +73,17 @@ mod tests {
     }
     #[test]
     fn nt_membership() {
-        assert!(nt_has("津田"));
-        assert!(!nt_has("启车"));
+        // 开源资产语义锁: 成员测=排序表二分行为契约（词条域随资产变——
+        // 「津田」属研究线语料资产; k2 向量锁由 k2_vector_jintian 承担）
+        match nt_sorted() {
+            Some(t) if !t.is_empty() => {
+                let k = t[t.len() / 2];
+                assert!(
+                    t.binary_search(&k).is_ok(),
+                    "表中位成员应命中（二分一致性）"
+                );
+            }
+            _ => {} // 资产缺席=恒 false 语义（nt_has None 分支）
+        }
     }
 }

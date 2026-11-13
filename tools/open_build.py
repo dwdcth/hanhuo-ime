@@ -106,9 +106,16 @@ def main():
         total = sum(f for _, _, f in rows) or 1
         per_source[name] = (rows, total)
         log(f'{name}: {len(rows)} 条 / 频次总量 {total}')
+    # 跨源归一化律（2026-11-13 sm→什么 案定谳）: fv 必须用全局 total
+    # ——各源 total 差 6 个量级（base 5.6e9 vs others 1.9e3）, 按源归一
+    # 时缺频次源（缺省 freq=1）的词 P 虚大 → fv 系统性偏小（假高频）,
+    # 污染简拼键 rid 排序（others 杉木 P=1/1941 压过 base 什么
+    # 502468/5.6e9）与一切跨词 fv 比较。
+    GLOBAL_TOTAL = sum(t for _, t in per_source.values())
 
     # ---------- 2. 主表 entries[(word, syl_tuple)] = fv（跨源取最高频） ----------
     entries: dict[tuple[str, tuple[str, ...]], int] = {}
+    raw_entries: dict[tuple[str, tuple[str, ...]], int] = {}
     bad = 0
     for name in SOURCES:
         rows, total = per_source[name]
@@ -121,11 +128,16 @@ def main():
                 continue
             if a.max_syl and len(syls) > a.max_syl:
                 continue
-            fv = freq_to_val(freq, total)
+            fv = freq_to_val(freq, GLOBAL_TOTAL)
             k = (w, syls)
             cur = entries.get(k)
             if cur is None or fv < cur:
                 entries[k] = fv
+            # 原始频次平行表（简拼键排序 tie-break 用——量化 val 同档的
+            # 词（什么 502468/上面 500494 → 同 50221）按原始频次分序）
+            cur_r = raw_entries.get(k)
+            if cur_r is None or freq > cur_r:
+                raw_entries[k] = freq
     log(f'主表条目: {len(entries)}（坏注音 {bad}）')
 
     words_set = {w for (w, _) in entries}
@@ -242,6 +254,14 @@ def main():
     log(f'WHASH: {n_slots} 槽')
 
     # ---------- 7. 简拼（从读音自动生成, v3: rid 引用） ----------
+    # 键序律: (量化 fv, −原始频次)——fv 同档 tie 时原始频次降序
+    # （什么 502468 > 上面 500494 → sm 键 shen'me rid 居首）。
+    best_raw_by_reading: dict[str, int] = {}
+    for (_w, t), fr in raw_entries.items():
+        key = ''.join(t)
+        cur = best_raw_by_reading.get(key)
+        if cur is None or fr > cur:
+            best_raw_by_reading[key] = fr
     jmap: dict[str, dict[int, int]] = defaultdict(dict)  # jk → rid → fv
     for rid, key in enumerate(keys):
         for t in rmap[key].keys():
@@ -257,7 +277,11 @@ def main():
     jeoff = array('I')
     je = bytearray()
     for jk in jkeys:
-        exps = sorted(jmap[jk].items(), key=lambda x: x[1])[:JIAN_MAX_EXP]
+        exps = sorted(
+            jmap[jk].items(),
+            key=lambda x: (x[1], -best_raw_by_reading.get(
+                keys[x[0]], 0)),
+        )[:JIAN_MAX_EXP]
         jkoff.append(len(jblob))
         b = jk.encode()
         jblob.append(0)

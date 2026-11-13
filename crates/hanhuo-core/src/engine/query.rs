@@ -859,18 +859,27 @@ impl Engine {
             };
             if inp.chars().count() <= 2 {
                 if let Some(tbl) = g1_col_solo(&inp) {
-                    return tf(self.q_initial_panel(tbl, topk));
+                    return self.solo_jianpin_inject(
+                        &inp,
+                        tf(self.q_initial_panel(tbl, topk)),
+                    );
                 }
             }
             // 役N tick71: 音节字列律 — 409 音节钉表面板（与 ctx 无关;
             // 字列+补全词+简拼组合原生序混排, 原样钉）
             // 役N tick78: 音节门切深表源（96 深; 前 26 与浅表逐位同）
             if let Some(tbl) = syl_deep(&inp) {
-                return tf(self.q_initial_panel(tbl, topk));
+                return self.solo_jianpin_inject(
+                    &inp,
+                    tf(self.q_initial_panel(tbl, topk)),
+                );
             }
             // 役N tick74: 双声母对面板钉序（ns/bj/... 377 对; 表空休眠）
             if let Some(tbl) = pair_panel(&inp) {
-                return tf(self.q_initial_panel(tbl, topk));
+                return self.solo_jianpin_inject(
+                    &inp,
+                    tf(self.q_initial_panel(tbl, topk)),
+                );
             }
         }
 
@@ -2670,11 +2679,12 @@ impl Engine {
 
     /// B2.7 简拼整键命中: q_jianpin 面板中首字母序列恰等于输入的候选
     /// （表内键的真语义命中; 部分前缀/列候选排除）。
-    fn jianpin_key_hits(&self, inp: &str) -> Vec<Cand> {
+    pub(super) fn jianpin_key_hits(&self, inp: &str) -> Vec<Cand> {
         let initials: String = inp
             .chars()
             .map(|c| c.to_ascii_lowercase())
             .collect();
+        let raw = self.q_jianpin(inp);
         self.q_jianpin(inp)
             .into_iter()
             .filter(|c| {
@@ -2689,6 +2699,57 @@ impl Engine {
             })
             .take(6)
             .collect()
+    }
+
+    /// B2.7b 钉序早退面简拼注入（boost 域专属产品增强）: ≤2 键/音节键
+    /// 早退门（g1_col_solo/syl_deep/pair_panel）先于主管线 B2.7 注入段
+    /// return——双声母简拼键（sm→什么）被截胡无注入机会。native 双键
+    /// 钉序=首键字列在途律（腾讯 bin 实证 sm=撒/色/四…, golden 忠实锁），
+    /// boost 域在此补双声母简拼体验（hits 空=零行为, 忠实门不受触）。
+    fn solo_jianpin_inject(&self, inp: &str, cands: Vec<Cand>) -> Vec<Cand> {
+        let Some(b) = &self.boost else { return cands };
+        if !b.jianpin_inject || inp.is_empty() {
+            return cands;
+        }
+        // 音节意图门: inp 为合法音节全串（ma/ke/ai——DAT 全串 terminal,
+        // 有词以此完整读音开头）时用户意图是音节本身, 简拼键命中
+        // （ma→母爱）是误伤; 仅非音节声母对（sm/zm/bj）注入。
+        let st = self.dat.walk(inp.as_bytes(), ROOT);
+        if st >= 0 && self.dat.is_terminal(st) {
+            return cands;
+        }
+        let hits = self.jianpin_key_hits(inp);
+        if hits.is_empty() {
+            return cands;
+        }
+        let mut c = cands;
+        let top = c.first().map(|x| x.score).unwrap_or(0.0);
+        let mut injected = false;
+        for (i, h) in hits.into_iter().take(6).enumerate() {
+            let target = top + 0.5 - 0.01 * i as f64;
+            match c.iter_mut().find(|x| x.word == h.word) {
+                Some(x) => {
+                    if x.score < target {
+                        x.score = target;
+                        injected = true;
+                    }
+                }
+                None => {
+                    let mut h = h;
+                    h.score = target;
+                    c.push(h);
+                    injected = true;
+                }
+            }
+        }
+        if injected {
+            c.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        c
     }
 
     /// B5-4 删词（IME 删词手势后端）: 学习词全键清除, 即时落盘。
@@ -2851,7 +2912,7 @@ impl Engine {
     fn engdict_words(&self) -> Option<std::cell::Ref<'_, HashSet<String>>> {
         if self.engdict_v.borrow().is_none() {
             // py _ENGDICT_TSV = os.path.expanduser('~/tmp/...')
-            let raw = "~/tmp/hanhuo/extracted/3.0.1.1/BuildIn/bwcnenmac_words.tsv";
+            let raw = "~/tmp/wetype-win/extracted/3.0.1.1/BuildIn/bwcnenmac_words.tsv";
             let tsv = if let Some(rest) = raw.strip_prefix("~/") {
                 let home = std::env::var("HOME").unwrap_or_default();
                 std::path::PathBuf::from(home).join(rest)
@@ -2931,7 +2992,7 @@ mod tests {
     fn tone_engine() -> Engine {
         let bin = std::env::var("WXQ_BIN").unwrap_or_else(|_| {
             format!(
-                "{}/tmp/hanhuo/wxq_dict.bin",
+                "{}/tmp/wetype-win/wxq_dict.bin",
                 std::env::var("HOME").unwrap()
             )
         });
@@ -2970,7 +3031,7 @@ mod tests {
     #[ignore = "真机: 需 wxq_dict.bin"]
     fn dump_wxq_words() {
         let bin = std::env::var("WXQ_BIN").unwrap_or_else(|_| {
-            format!("{}/tmp/hanhuo/wxq_dict.bin",
+            format!("{}/tmp/wetype-win/wxq_dict.bin",
                 std::env::var("HOME").unwrap())
         });
         let e = Engine::open(std::path::Path::new(&bin)).unwrap();
@@ -3450,7 +3511,7 @@ mod tests {
     fn jianpin_sent_beam_real_rbjjxw() {
         let bin = std::env::var("HANHUO_BIN")
             .unwrap_or_else(|_| {
-                format!("{}/tmp/hanhuo/wxq.bin",
+                format!("{}/tmp/wetype-win/wxq.bin",
                         std::env::var("HOME").unwrap_or_default())
             });
         let Ok(e) = Engine::open(std::path::Path::new(&bin)) else {
@@ -3509,7 +3570,7 @@ mod tests {
     #[ignore = "真机 wxq.bin（HANHUO_BIN / 默认路径）"]
     fn ctx_jp_compose_real_popcorn_block() {
         let bin = std::env::var("HANHUO_BIN").unwrap_or_else(|_| {
-            format!("{}/tmp/hanhuo/wxq.bin",
+            format!("{}/tmp/wetype-win/wxq.bin",
                     std::env::var("HOME").unwrap_or_default())
         });
         let Ok(mut e) = Engine::open(std::path::Path::new(&bin)) else {
@@ -3538,7 +3599,7 @@ mod tests {
     #[ignore = "真机 wxq.bin（HANHUO_BIN / 默认路径）"]
     fn ctx_jp_compose_real_erwo_reachable() {
         let bin = std::env::var("HANHUO_BIN").unwrap_or_else(|_| {
-            format!("{}/tmp/hanhuo/wxq.bin",
+            format!("{}/tmp/wetype-win/wxq.bin",
                     std::env::var("HOME").unwrap_or_default())
         });
         let Ok(mut e) = Engine::open(std::path::Path::new(&bin)) else {
@@ -3693,7 +3754,7 @@ mod tests {
     fn b8_seg_variants_real_basheyuanbi() {
         use super::super::boost::sentence_seg_variants;
         let bin = std::env::var("HANHUO_BIN").unwrap_or_else(|_| {
-            format!("{}/tmp/hanhuo/wxq.bin",
+            format!("{}/tmp/wetype-win/wxq.bin",
                     std::env::var("HOME").unwrap_or_default())
         });
         let Ok(e) = Engine::open(std::path::Path::new(&bin)) else {
@@ -4123,7 +4184,7 @@ mod tests {
     #[ignore = "真机 wxq.bin（HANHUO_BIN / 默认路径）"]
     fn b6_compose_inject_presence_and_zero_perturbation() {
         let bin = std::env::var("HANHUO_BIN").unwrap_or_else(|_| {
-            format!("{}/tmp/hanhuo/wxq.bin",
+            format!("{}/tmp/wetype-win/wxq.bin",
                     std::env::var("HOME").unwrap_or_default())
         });
         let Ok(mut e) = Engine::open(std::path::Path::new(&bin)) else {
@@ -4211,7 +4272,7 @@ mod fuzz_probe_tests {
     fn query_never_panics_arbitrary_inputs() {
         let bin = std::env::var("HANHUO_BIN").unwrap_or_else(|_| {
             format!(
-                "{}/tmp/hanhuo/wxq.bin",
+                "{}/tmp/wetype-win/wxq.bin",
                 std::env::var("HOME").unwrap_or_default()
             )
         });
@@ -4258,7 +4319,7 @@ mod fuzz_probe_tests {
     fn query_determinism_same_and_cross_engine() {
         let bin = std::env::var("HANHUO_BIN").unwrap_or_else(|_| {
             format!(
-                "{}/tmp/hanhuo/wxq_dict.bin",
+                "{}/tmp/wetype-win/wxq_dict.bin",
                 std::env::var("HOME").unwrap_or_default()
             )
         });

@@ -24,9 +24,11 @@ def main():
     ltr = "--ltr" in sys.argv
     with open(out, "w", encoding="utf-8") as f:
         for c in cases:
-            # 镜像 cmd_golden 口径: e.query(inp, ctx, jianpin, topk, nn, ltr, dp)
+            # 镜像 cmd_golden 口径: e.query(inp, ctx, jianpin, topk, nn,
+            # ltr, dp) —— 纯忠实路径（CLI 默认 b28_default 走
+            # query_typo_retry, 与 cmd_golden 错位 → --faithful 对齐）
             cmd = [H, "query", c["inp"], "--bin", BIN,
-                   "--topk", str(c.get("topk", 20)), "--json"]
+                   "--topk", str(c.get("topk", 20)), "--json", "--faithful"]
             if c.get("ctx"):
                 cmd += ["--ctx", c["ctx"]]
             if c.get("jianpin"):
@@ -42,6 +44,7 @@ def main():
             cands = [{
                 "word": x["word"], "kind": x["kind"], "reading": x["reading"],
                 "logp": x["logp"], "score": x["score"], "lm": x.get("lm"),
+                "ltr": x.get("ltr"),
             } for x in d.get("cands", [])]
             rec = {k: c[k] for k in ("inp", "ctx", "jianpin", "nn", "ltr", "dp", "topk") if k in c}
             rec["cands"] = cands
