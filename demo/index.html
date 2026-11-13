@@ -19,6 +19,7 @@
 <h2>hanhuo-ime <small style="font-weight:400">wasm 在线演示</small></h2>
 <p id="status">词典加载中（约 60MB, 首次取决于网速）…</p>
 <input id="q" placeholder="输入拼音（nihao）/ T9 数字键（--t9 默认关, 试 94664486 用 ?t9=1 开启）" autofocus>
+<div id="preedit" style="font-size:15px;margin-top:6px;min-height:22px;color:#999"></div>
 <div id="cands"></div>
 <div id="out"></div>
 <p style="margin-top:2rem;font-size:13px;color:#888">
@@ -56,8 +57,34 @@ document.getElementById('status').textContent =
   `引擎就绪：${n.toLocaleString()} 词条${nnlm ? ' + NNLM 宽档' : ''}${t9 ? ' + T9' : ''}`;
 let committed = '';
 const q = document.getElementById('q');
+function consumedKeys(pending, cand) {
+  if (!pending || !cand) return 0;
+  const r = cand.reading || '';
+  if (!r.includes("'")) return 0;
+  const syls = r.split("'");
+  const letters = syls.join('');
+  if (letters && pending.startsWith(letters)) return letters.length;
+  const inits = syls.map(s => s[0] || '').join('');
+  if (inits.length >= 2 && pending.startsWith(inits) && inits.length < letters.length) return inits.length;
+  return 0;
+}
+function renderPreedit(pending, cands) {
+  const el = document.getElementById('preedit');
+  if (!pending) { el.textContent = ''; return; }
+  const top = (cands || []).find(c => (c.reading || '').includes("'"));
+  const n = consumedKeys(pending, top);
+  if (!n || n >= pending.length) { el.textContent = pending; return; }
+  el.textContent = '';
+  const u = document.createElement('span');
+  u.textContent = pending.slice(0, n);
+  u.style.cssText = 'background:#2f6fed;color:#fff;border-radius:4px;padding:0 4px;font-weight:600';
+  const t = document.createElement('span');
+  t.textContent = pending.slice(n);
+  el.appendChild(u); el.appendChild(t);
+}
 q.addEventListener('input', () => {
   const r = JSON.parse(w.query(q.value, committed, 10));
+  renderPreedit(q.value, r.cands);
   const box = document.getElementById('cands');
   box.innerHTML = '';
   r.cands.slice(0, 10).forEach((c, i) => {
