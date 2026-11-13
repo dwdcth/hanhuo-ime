@@ -984,6 +984,21 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
     }
     wire_boost(&mut e, args);
 
+    // P2C 生成召回（--p2c <stem>: 长句召回战役主件——拼音→汉字直接
+    // 生成, 不依赖词图 beam; 青简接线律: ≥6 音节干净拼音时生成句排
+    // 词图整句前, 分只排名不写回引擎分域）。
+    let mut p2c_gens: Vec<(String, f32)> = Vec::new();
+    if let Some(pstem) = flag_val(args, "--p2c") {
+        if inp.len() >= 12 && inp.bytes().all(|b| b.is_ascii_lowercase()) {
+            match hanhuo_lm::p2c::P2cModel::open(Path::new(&pstem)) {
+                Ok(m) => match m.generate(&inp, 5, 32) {
+                    Ok(g) => p2c_gens = g,
+                    Err(e) => eprintln!("[p2c] 生成失败: {e}"),
+                },
+                Err(e) => eprintln!("[p2c] 载入失败: {e}"),
+            }
+        }
+    }
     // 知意 emission 钩子（--zhiyi-emit <dir>: composition 头槽字分布
     // → B8 段格边加分+变体面分合成+主管线呈现层罚——召回侧闭环;
     // ctx 缺席/切分失败/前向败=零行为）
@@ -1172,6 +1187,43 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
     } else {
         cs0
     };
+    // P2C 生成面注入（B2.7 律: 在场提权/缺席注入 top+0.5−0.01i;
+    // 青简律: P2C 分只排名——注入分是钉序呈现位, 不代表跨键串可比）
+    if !p2c_gens.is_empty() {
+        let top = cs.first().map(|c| c.score).unwrap_or(0.0);
+        let mut injected = false;
+        for (i, (t, _sc)) in p2c_gens.iter().take(5).enumerate() {
+            let target = top + 0.5 - 0.01 * i as f64;
+            match cs.iter_mut().find(|c| c.word == *t) {
+                Some(c) => {
+                    if c.score < target {
+                        c.score = target;
+                        injected = true;
+                    }
+                }
+                None => {
+                    let mut c = hanhuo_core::Cand::new(
+                        t.clone(),
+                        target,
+                        hanhuo_core::Kind::Sentence,
+                    );
+                    cs.push(c);
+                    injected = true;
+                }
+            }
+        }
+        if injected {
+            cs.sort_by(|a, b| {
+                let ra = a.kind == hanhuo_core::Kind::Sentence;
+                let rb = b.kind == hanhuo_core::Kind::Sentence;
+                ra.cmp(&rb).then_with(|| {
+                    b.score.partial_cmp(&a.score).unwrap_or(
+                        std::cmp::Ordering::Equal,
+                    )
+                })
+            });
+        }
+    }
     // emission 呈现层罚（--zhiyi-emit 的主管线面闭环: sentence 类候选
     // 补槽字分布罚——与段格变体的合成分同域, 「餐开始整」类单字贪心
     // 面被罚下沉, 真词路径浮出; 非句类/无状态零行为）
