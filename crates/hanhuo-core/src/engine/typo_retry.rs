@@ -394,10 +394,55 @@ impl Engine {
         // 优先, ma→母爱 是误伤）。忠实门（无 boost）零行为。
         if self.boost.as_ref().is_some_and(|b| b.jianpin_inject) {
             let st = self.dat.walk(inp.as_bytes(), ROOT);
+            if std::env::var("B27C_DBG").is_ok() {
+                eprintln!(
+                    "[b27c] inp={inp} terminal={} hits={:?}",
+                    st >= 0 && self.dat.is_terminal(st),
+                    self.jianpin_key_hits(inp)
+                        .iter()
+                        .map(|c| c.word.clone())
+                        .take(8)
+                        .collect::<Vec<_>>()
+                );
+            }
             if !(st >= 0 && self.dat.is_terminal(st)) {
-                let hits = self.jianpin_key_hits(inp);
+                let mut hits = self.jianpin_key_hits(inp);
+                // B3 同律 ctx 语境重排（用户理论: 后段简拼结合前句——
+                // 今天天气|zbc→真不错）: nnlm adv 优先打分（ctx 域正口）,
+                // hits 按 P(词|ctx) 降序重排（原键序 tie-break）; 模型
+                // 缺席/不可编码 → 原序零行为。
+                if let Some(ct) = ctx.filter(|c| !c.is_empty()) {
+                    let seqs: Vec<Vec<u32>> = hits
+                        .iter()
+                        .map(|h| self.nnlm_encode(&h.word).unwrap_or_default())
+                        .collect();
+                    if !seqs.is_empty() && !seqs.iter().any(|s| s.is_empty()) {
+                        if let Some(cseq) =
+                            self.nnlm_encode(ct).filter(|s| !s.is_empty())
+                        {
+                            if let Some(sc) = self.nnlm_score(&cseq, &seqs) {
+                                let mut idx: Vec<usize> =
+                                    (0..hits.len()).collect();
+                                idx.sort_by(|&a, &b| {
+                                    sc[b].partial_cmp(&sc[a]).unwrap_or(
+                                        std::cmp::Ordering::Equal,
+                                    )
+                                });
+                                hits = idx
+                                    .into_iter()
+                                    .map(|i| hits[i].clone())
+                                    .collect();
+                            }
+                        }
+                    }
+                }
                 if !hits.is_empty() {
-                    let top = pool.first().map(|c| c.score).unwrap_or(0.0);
+                    // top=面板分数最大值（pool 此刻未排序——收集序 first
+                    // 是低分词, zbc 案注入分 −4.5 落后 泽测 −0.60 的根因）
+                    let top = pool
+                        .iter()
+                        .map(|c| c.score)
+                        .fold(f64::NEG_INFINITY, f64::max);
                     let mut injected = false;
                     for (i, h) in hits.into_iter().take(6).enumerate() {
                         let target = top + 0.5 - 0.01 * i as f64;
@@ -422,6 +467,14 @@ impl Engine {
                                 std::cmp::Ordering::Equal,
                             )
                         });
+                    }
+                    if std::env::var("B27C_DBG").is_ok() {
+                        eprintln!(
+                            "[b27c-post] injected={injected} pool前3: {:?}",
+                            pool.iter().take(3)
+                                .map(|c| format!("{}({:.2})", c.word, c.score))
+                                .collect::<Vec<_>>()
+                        );
                     }
                 }
             }

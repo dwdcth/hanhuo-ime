@@ -135,6 +135,12 @@ body {
   font-size: 18px; color: var(--accent);
   border-bottom: 2px solid var(--accent); display: inline-block; min-height: 27px;
 }
+/* 拼音分段高亮（渐进候选）: 已消费段实底、在途段灰 */
+.preedit .py-used {
+  background: var(--accent); color: var(--card);
+  border-radius: 4px 2px 2px 4px; padding: 0 4px; font-weight: 600;
+}
+.preedit .py-rest { color: var(--muted, #999); letter-spacing: .5px; }
 
 .pinyin-input {
   width: 100%; font-size: 18px; padding: 12px 14px;

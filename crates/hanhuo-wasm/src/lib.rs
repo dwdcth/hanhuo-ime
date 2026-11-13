@@ -207,8 +207,12 @@ pub fn query(inp: &str, ctx: &str, topk: usize) -> String {
         .iter()
         .map(|c| {
             format!(
-                "{{\"word\":\"{}\",\"kind\":\"{}\",\"score\":{:.4},\"logp\":{:.4}}}",
-                esc(&c.word), c.kind.as_str(), c.score, c.logp
+                "{{\"word\":\"{}\",\"kind\":\"{}\",\"score\":{:.4},\"logp\":{:.4},\"reading\":\"{}\"}}",
+                esc(&c.word),
+                c.kind.as_str(),
+                c.score,
+                c.logp,
+                esc(&c.reading)
             )
         })
         .collect();

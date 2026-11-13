@@ -2723,7 +2723,10 @@ impl Engine {
             return cands;
         }
         let mut c = cands;
-        let top = c.first().map(|x| x.score).unwrap_or(0.0);
+        let top = c
+            .iter()
+            .map(|x| x.score)
+            .fold(f64::NEG_INFINITY, f64::max);
         let mut injected = false;
         for (i, h) in hits.into_iter().take(6).enumerate() {
             let target = top + 0.5 - 0.01 * i as f64;

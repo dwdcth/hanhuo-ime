@@ -65,7 +65,10 @@
       if (!nWords) return [];
       const r = JSON.parse(mod.query(input, String(ctx || ''), topk));
       return (r.cands || []).map(c => ({
-        word: c.word, score: c.score, kind: c.kind, reading: '',
+        // reading 透传（拼音分段高亮用——消费键数 = 全拼字母数 或 简拼
+        // 音节数, app.renderPreedit 双态探测）
+        word: c.word, score: c.score, kind: c.kind,
+        reading: c.reading || '',
       }));
     },
 

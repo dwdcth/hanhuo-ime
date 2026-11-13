@@ -252,6 +252,40 @@ function scheduleQuery() {
   queryTimer = setTimeout(runQuery, 60);
 }
 
+// ---------- 拼音分段高亮（渐进候选形态）----------
+// 首选候选的读音与 pending 前缀双态探测: 全拼态（letters 前缀匹配,
+// 如 nihao→ni'hao 消 5 键）或 简拼态（各音节首字母前缀匹配, 如
+// jttxzbc→jin'tian'tian'qi 消 4 键 jttx）——消费段实底高亮, 提醒
+// 用户「前面这段被用来匹配了」, 其余在途。
+function consumedKeys(pending, cand) {
+  if (!pending || !cand) return 0;
+  const r = cand.reading || '';
+  if (!r.includes("'")) return 0;
+  const syls = r.split("'");
+  const letters = syls.join('');
+  if (letters && pending.startsWith(letters)) return letters.length;
+  const inits = syls.map(s => s[0] || '').join('');
+  if (inits.length >= 2 && pending.startsWith(inits) && inits.length < letters.length) {
+    return inits.length;
+  }
+  return 0;
+}
+
+function renderPreedit(pending, cands) {
+  if (!pending) { els.preedit.textContent = ''; return; }
+  const top = (cands || []).find(c => (c.reading || '').includes("'"));
+  const n = consumedKeys(pending, top);
+  if (!n || n >= pending.length) { els.preedit.textContent = pending; return; }
+  els.preedit.textContent = '';
+  const u = document.createElement('span');
+  u.className = 'py-used'; u.textContent = pending.slice(0, n);
+  const s = document.createElement('span');
+  s.className = 'py-rest'; s.textContent = pending.slice(n);
+  els.preedit.appendChild(u);
+  els.preedit.appendChild(s);
+}
+
+
 async function runQuery() {
   const pending = composer.pending;
   if (!pending || !adapter.ready) {
@@ -279,7 +313,7 @@ async function runQuery() {
     }
     return;
   }
-  els.preedit.textContent = pending;
+  renderPreedit(pending, null);
   const seq = ++querySeq;
   const t0 = performance.now();
   // ctx = 已上屏文本（引擎自取尾段——B3-d 搭配钉序/联想/bigram 消费）
@@ -298,6 +332,7 @@ async function runQuery() {
   currentCandidates = cands;
   pageIdx = 0;
   renderCandidates();
+  renderPreedit(pending, cands); // 消费段高亮（首选读音双态探测）
   els.latency.textContent = `查询 ${lastQueryMs.toFixed(1)}ms`;
 }
 
