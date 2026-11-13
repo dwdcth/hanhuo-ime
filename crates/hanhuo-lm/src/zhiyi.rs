@@ -163,6 +163,37 @@ impl ZhiyiVocab {
         Some(Self { units, letters, chars, readings, unit_id })
     }
 
+    /// py 贪心音节切分（f: 单元全集按长度降序; 切不尽→空——调用方
+    /// 置零单元, 模型退化无拼音条件仍可比）。
+    pub fn greedy_sylls(&self, py: &str) -> Vec<String> {
+        let mut syls: Vec<&str> = self
+            .units
+            .iter()
+            .filter(|u| u.starts_with("f:"))
+            .map(|u| &u[2..])
+            .collect();
+        syls.sort_by_key(|s| std::cmp::Reverse(s.len()));
+        let mut out = Vec::new();
+        let mut i = 0usize;
+        let b = py.as_bytes();
+        while i < b.len() {
+            let mut hit = false;
+            for s in &syls {
+                let sb = s.as_bytes();
+                if i + sb.len() <= b.len() && &b[i..i + sb.len()] == sb {
+                    out.push((*s).to_string());
+                    i += sb.len();
+                    hit = true;
+                    break;
+                }
+            }
+            if !hit {
+                return Vec::new();
+            }
+        }
+        out
+    }
+
     /// 敲键对齐: typed（字母串）× 读音音节列 → 单元 id 列
     /// （f:全拼 / p:前缀; 读不进键 → None——调用方置零单元）。
     /// 单元语义: 覆盖 typed 的对齐（README: 中国 typed zhongg →

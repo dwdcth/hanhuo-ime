@@ -310,6 +310,72 @@ fn positional(args: &[String]) -> Option<String> {
     None
 }
 
+/// 知意双条件重排（呈现层）: py+ctx 双条件对 top16 候选按模型分
+/// 稳定降序（同分保持引擎序）; 其余候选垫后原序。青简律——只改
+/// 呈现名次, 不写回 Cand.score（跨读法比较域不受污染）。
+fn zhiyi_rerank(
+    cs: Vec<Cand>,
+    ctx: Option<&str>,
+    zdir: &str,
+    inp: &str,
+) -> Vec<Cand> {
+    use std::cmp::Ordering;
+    let Some(ct) = ctx.filter(|c| !c.is_empty()) else {
+        return cs;
+    };
+    let Some(m) = hanhuo_lm::zhiyi::ZhiyiModel::open(Path::new(zdir)) else {
+        eprintln!("[zhiyi] 模型载入失败: {zdir}");
+        return cs;
+    };
+    let Ok(net) = hanhuo_lm::zhiyi::ZhiyiNet::load(Path::new(zdir), &m)
+    else {
+        eprintln!("[zhiyi] 网络载入失败");
+        return cs;
+    };
+    // 重排域: 前 16 非空词面（首次出现的词——重复词面去重保序）
+    let mut pick: Vec<usize> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (i, c) in cs.iter().enumerate() {
+        if !c.word.is_empty() && seen.insert(c.word.clone()) {
+            pick.push(i);
+            if pick.len() >= 16 {
+                break;
+            }
+        }
+    }
+    if pick.len() < 2 {
+        return cs;
+    }
+    // py=查询输入; 贪心切分（失败→空单元列, 模型退化无拼音条件仍可比）
+    let sylls = m.vocab.greedy_sylls(inp);
+    let words: Vec<String> = pick.iter().map(|&i| cs[i].word.clone()).collect();
+    let (ids, units, markers) =
+        m.choice_sequence(ct, inp, &sylls, &words);
+    if markers.len() < 2 {
+        return cs;
+    }
+    let Ok(sc) = net.forward_choice(&ids, &units, &markers) else {
+        return cs;
+    };
+    let mut order: Vec<usize> = (0..sc.len()).collect();
+    order.sort_by(|&a, &b| {
+        sc[b].partial_cmp(&sc[a]).unwrap_or(Ordering::Equal)
+    });
+    let mut out: Vec<Cand> = Vec::with_capacity(cs.len());
+    let mut used = vec![false; cs.len()];
+    for k in order {
+        let i = pick[k];
+        out.push(cs[i].clone());
+        used[i] = true;
+    }
+    for (i, c) in cs.into_iter().enumerate() {
+        if !used[i] {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn fmt_rows(cands: &[Cand]) {
     for (i, c) in cands.iter().enumerate() {
         let lm = c.lm.map(|v| format!(" lm={v:+.2}")).unwrap_or_default();
@@ -945,7 +1011,14 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
             println!("※ {x}");
         }
     }
-    let cs = cs0;
+    // 知意双条件重排（--zhiyi <dir>: 词级语境场景 +14.4pp 实证——v4
+    // 298 案 56.7→71.1）; 呈现层重排（青简律: 只排名次不写回引擎分
+    // 域——跨读法门槛不受触）。ctx 缺席/模型缺席/前向失败=原序零行为。
+    let cs = if let Some(zdir) = flag_val(args, "--zhiyi") {
+        zhiyi_rerank(cs0, ctx.as_deref(), &zdir, &inp)
+    } else {
+        cs0
+    };
     if json {
         let items: Vec<serde_json::Value> = cs
             .iter()
