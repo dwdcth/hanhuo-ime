@@ -28,3 +28,17 @@ jobs:
           python3 tools/open_build.py
           md5sum open/hanhuo_open.bin
           target/release/hanhuo golden golden/open_golden.jsonl
+      # 快照锚律（2026-11-13 CI 锚定策）: golden 快照必须由 CI 环境产出
+      # 冻结——本地 rustc 与 CI stable 的引擎分差（bin md5 逐位同、
+      # logp 同、score 罚分域差）使本地产快照在 CI 失配 592/611。重锚
+      # SOP: 本轮 artifact 下载替换 golden/open_golden.jsonl 提交。
+      - name: 快照 artifact（CI 环境锚）
+        if: always()
+        env:
+          WXQ_BIN: ${{ github.workspace }}/open/hanhuo_open.bin
+        run: python3 tools/snapshot.py /tmp/snap_ci.jsonl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: golden-snapshot-ci
+          path: /tmp/snap_ci.jsonl
+          retention-days: 30
