@@ -11,6 +11,17 @@ bytemuck = "1"
 # SafeTensors 可选格式（部署优化线; 默认关闭——主引擎走 pack.rs 原生格式保位精确）
 [features]
 safetensors = ["dep:safetensors", "dep:half", "dep:anyhow", "dep:tracing", "dep:hanhuo-dict", "dep:serde_json"]
+zhiyi = ["dep:candle-core", "dep:candle-nn", "dep:safetensors", "dep:serde_json", "dep:half"]
+
+# 知意双条件选词模型推理（Apache-2.0 开源资产; candle 纯 Rust——
+# 效果验证线, wasm 线后续按需手写精简）
+[dependencies.candle-core]
+version = "0.9"
+optional = true
+
+[dependencies.candle-nn]
+version = "0.9"
+optional = true
 
 # feature 专用依赖
 [dependencies.safetensors]

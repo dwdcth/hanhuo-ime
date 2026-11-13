@@ -22,4 +22,8 @@ pub mod nnlm_adv;
 pub mod mdltr_safetensors;
 #[cfg(feature = "safetensors")]
 pub mod bgrm_safetensors;
+/// 知意双条件选词模型（Apache-2.0 开源资产, clean-room 自写推理,
+/// 规格源=官方 README+test_vectors）——candle 纯 Rust 前向。
+#[cfg(feature = "zhiyi")]
+pub mod zhiyi;
 
