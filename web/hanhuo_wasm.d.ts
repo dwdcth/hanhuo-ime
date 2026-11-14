@@ -17,6 +17,13 @@ export function en_candidates(inp: string, topk: number): string;
 export function enable_boost(): boolean;
 
 /**
+ * 模糊音模式（真 IME 的「模糊音」设置项; CLI --fuzz 同律）。
+ * mode: 0=AUTO（结构质量门）/ 1=ON（强制开, 跳门——jin↔jing 类全救）/
+ * 2=OFF。demo 场景建议用户开=1（jingnian→今年 案）。
+ */
+export function enable_fuzz(mode: number): boolean;
+
+/**
  * T9 九宫模式开关（纯 2-9 数字键串走九宫展开——设计-T9九宫输入;
  * CLI --t9 同律, on=false 恢复默认关）。返回 true=成功。
  */
@@ -63,6 +70,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly en_candidates: (a: number, b: number, c: number) => [number, number];
     readonly enable_boost: () => number;
+    readonly enable_fuzz: (a: number) => number;
     readonly enable_t9: (a: number) => number;
     readonly init: (a: number, b: number) => number;
     readonly init_en: (a: number, b: number) => number;

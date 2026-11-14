@@ -83,6 +83,11 @@
       try { return !!mod.enable_t9(!!on); } catch { return false; }
     },
 
+    // 模糊音模式（真 IME 设置项; mode 0=AUTO/1=ON/2=OFF, CLI --fuzz 同律）
+    enableFuzz(mode = 1) {
+      try { return !!mod.enable_fuzz(mode | 0); } catch { return false; }
+    },
+
     // 英文候选（纯字母输入; 精确词优先+前缀补全频序, CLI --en 同律）
     enCandidates(input, topk = 8) {
       try {

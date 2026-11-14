@@ -32,6 +32,7 @@ const els = {
   topkRange: $('#topk-range'),
   topkVal: $('#topk-val'),
   t9Toggle: $('#t9-toggle'),
+  fuzzToggle: $('#fuzz-toggle'),
   themeSeg: $('#theme-seg'),
   examples: $('#examples'),
   cacheInfo: $('#cache-info'),
@@ -47,7 +48,7 @@ function clampTopk(v) {
   return Math.min(20, Math.max(5, n));
 }
 
-const settings = loadSettings({ topk: 10, theme: 'auto', t9: false });
+const settings = loadSettings({ topk: 10, theme: 'auto', t9: false, fuzz: false });
 let pageSize = clampTopk(settings.topk);
 
 function applyThemeSetting() {
@@ -100,6 +101,7 @@ function renderStatus(st) {
   if (st.phase === 'ready' || st.phase === 'mock') {
     // 引擎就绪重放 T9 开关（toggle 早于装载拨动时生效）
     if (settings.t9) applyT9(true);
+    if (settings.fuzz) applyFuzz(true);
     renderEngineInfo();
     updateCacheInfo();
   }
@@ -344,6 +346,13 @@ function applyT9(on) {
   saveSettings(settings);
 }
 els.t9Toggle?.addEventListener('change', () => applyT9(els.t9Toggle.checked));
+function applyFuzz(on) {
+  settings.fuzz = !!on;
+  try { if (adapter.engine && adapter.engine.enableFuzz) adapter.engine.enableFuzz(settings.fuzz ? 1 : 2); } catch {}
+  if (els.fuzzToggle) els.fuzzToggle.checked = settings.fuzz;
+  saveSettings(settings);
+}
+els.fuzzToggle?.addEventListener('change', () => applyFuzz(els.fuzzToggle.checked));
 
 // ---------- 输入事件 ----------
 

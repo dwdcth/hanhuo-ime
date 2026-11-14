@@ -182,6 +182,25 @@ pub fn enable_t9(on: bool) -> bool {
     true
 }
 
+/// 模糊音模式（真 IME 的「模糊音」设置项; CLI --fuzz 同律）。
+/// mode: 0=AUTO（结构质量门）/ 1=ON（强制开, 跳门——jin↔jing 类全救）/
+/// 2=OFF。demo 场景建议用户开=1（jingnian→今年 案）。
+#[wasm_bindgen]
+pub fn enable_fuzz(mode: u32) -> bool {
+    use hanhuo_core::engine::{FUZZ_AUTO, FUZZ_OFF, FUZZ_ON};
+    let m = match mode {
+        0 => FUZZ_AUTO,
+        1 => FUZZ_ON,
+        _ => FUZZ_OFF,
+    };
+    let Some(e) = engine_mut() else {
+        console_log("[wasm] enable_fuzz: 先 init 词典");
+        return false;
+    };
+    e.set_fuzz_mode(m);
+    true
+}
+
 /// 查询 → JSON 候选串（word/kind/score/logp/reading 数组）。
 #[wasm_bindgen]
 pub fn query(inp: &str, ctx: &str, topk: usize) -> String {

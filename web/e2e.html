@@ -16,7 +16,7 @@ input { font-size: 1.2em; padding: .4em; width: 60%; }
 <p><input id="q" placeholder="输入拼音（如 nihao）" autofocus> <button id="go">查询</button></p>
 <div id="out"></div>
 <script type="module">
-import init, { init as loadBin, query, enable_boost } from './hanhuo_wasm.js';
+import init, { init as loadBin, query, enable_boost, enable_fuzz } from './hanhuo_wasm.js';
 const $ = id => document.getElementById(id);
 const fmt = r => r.cands.slice(0, 8).map((c, i) =>
   `${i + 1}. ${c.word}  (${c.kind}, ${c.score.toFixed(2)})`).join('\n');
@@ -25,6 +25,7 @@ const fmt = r => r.cands.slice(0, 8).map((c, i) =>
   const bin = await (await fetch('../open/hanhuo_open.bin')).arrayBuffer();
   const n = loadBin(new Uint8Array(bin));
   enable_boost();  // 2026-11-14: CLI 默认同律（C3/简拼/补全面——微信输入法案）
+  if (new URLSearchParams(location.search).has('fuzz')) enable_fuzz(1);  // ?fuzz=1 模糊音强制开
   $('status').textContent = `引擎就绪：${n.toLocaleString()} 词条（wasm 2.8MB + 词典 ${(bin.byteLength / 1e6).toFixed(1)}MB）`;
   // 自动端到端: 与原生 CLI 裁定的四案
   const cases = [
