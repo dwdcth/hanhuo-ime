@@ -31,7 +31,9 @@ w.initSync({ module: await (await fetch('./hanhuo_wasm_bg.wasm')).arrayBuffer() 
 // 词典下载进度显示
 const dict = await (async () => {
   const r = await fetch('./hanhuo_open.bin');
-  const total = +r.headers.get('content-length') || 60e6;
+  // content-length 是 gzip 压缩长度（Pages CDN 传压缩流）, 解压后字节
+  // 会超出——分母取 max(两者), 显示不封顶（2026-11-14 实证 181% 案）
+  const total = Math.max(+r.headers.get('content-length') || 0, 60e6);
   const rd = r.body.getReader(); const chunks = []; let got = 0;
   while (true) {
     const {done, value} = await rd.read();
