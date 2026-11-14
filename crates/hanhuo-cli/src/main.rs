@@ -1187,6 +1187,47 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
     } else {
         cs0
     };
+    // NNLM 特征式重排（--nnlm-feat: WowType 律吸收实验——特征=
+    // nnlm 分 − 本批最优（floor −20）, 呈现分 = score + λ·特征;
+    // 旧负结果「adv 无 ctx 崩塌 5.8%」用的是绝对分域, 特征相对化
+    // 可能翻案。sentence top8 组内重排, 呈现层零污染）。
+    if has_flag(args, "--nnlm-feat") {
+        let idxs: Vec<usize> = cs
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.kind == hanhuo_core::Kind::Sentence)
+            .map(|(i, _)| i)
+            .take(8)
+            .collect();
+        if idxs.len() >= 2 {
+            let seqs: Vec<Vec<u32>> = idxs
+                .iter()
+                .map(|&i| e.nnlm_encode(&cs[i].word).unwrap_or_default())
+                .collect();
+            if !seqs.iter().any(|x| x.is_empty()) {
+                if let Some(sc) = e.nnlm_score_noctx(&seqs) {
+                    let mx = sc.iter().cloned()
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    let lam = flag_val(args, "--nnlm-feat-lam")
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .unwrap_or(1.0);
+                    for (k, &i) in idxs.iter().enumerate() {
+                        let feat = (sc[k] - mx).max(-20.0);
+                        cs[i].score += lam * feat;
+                    }
+                    cs.sort_by(|a, b| {
+                        let ra = a.kind == hanhuo_core::Kind::Sentence;
+                        let rb = b.kind == hanhuo_core::Kind::Sentence;
+                        ra.cmp(&rb).then_with(|| {
+                            b.score.partial_cmp(&a.score).unwrap_or(
+                                std::cmp::Ordering::Equal,
+                            )
+                        })
+                    });
+                }
+            }
+        }
+    }
     // P2C 生成面注入（B2.7 律: 在场提权/缺席注入 top+0.5−0.01i;
     // 青简律: P2C 分只排名——注入分是钉序呈现位, 不代表跨键串可比）
     if !p2c_gens.is_empty() {
