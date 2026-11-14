@@ -521,9 +521,43 @@ impl Engine {
                         .iter()
                         .map(|c| c.score)
                         .fold(f64::NEG_INFINITY, f64::max);
+                    // C3 漏按歧义门（zhng 案: 镇魂女鬼 简拼 ∩ zhong 漏 o
+                    // 两可时全拼修复优先; amb_fix_best 同源注释）。变体池
+                    // 内的修复族（zhong/zhang/zheng 变体查询回流的 中/张/
+                    // 整 边）best 领先简拼 best ≥2.0 时翻转。
+                    const JP_AMB_MARGIN: f64 = 2.0;
+                    let fix = self.amb_fix_best(inp, &pool);
+                    let flip = match (&fix, hits.first()) {
+                        (Some((_, flp)), Some(jp)) => {
+                            *flp >= jp.logp + JP_AMB_MARGIN
+                        }
+                        _ => false,
+                    };
+                    if std::env::var("C3_DBG").is_ok() {
+                        eprintln!(
+                            "[c3-b27c] inp={inp} fix={fix:?} jp={:?} flip={flip}",
+                            hits.first().map(|c| c.logp),
+                        );
+                    }
                     let mut injected = false;
+                    let base = if flip {
+                        if let Some((fw, _)) = &fix {
+                            let target = top + 0.5;
+                            if let Some(x) =
+                                pool.iter_mut().find(|x| &x.word == fw)
+                            {
+                                if x.score < target {
+                                    x.score = target;
+                                    injected = true;
+                                }
+                            }
+                        }
+                        top - 0.1
+                    } else {
+                        top
+                    };
                     for (i, h) in hits.into_iter().take(6).enumerate() {
-                        let target = top + 0.5 - 0.01 * i as f64;
+                        let target = base + 0.5 - 0.01 * i as f64;
                         match pool.iter_mut().find(|x| x.word == h.word) {
                             Some(x) => {
                                 if x.score < target {
@@ -1243,6 +1277,40 @@ fn typo_variants_long_news_wenzhong_in_pool() {
             out.iter().any(|c| c.word.contains("好啊") && !c.lp_locked),
             "na'hao'a 真实词边应在池: {:?}",
             out.iter().map(|c| c.word.as_str()).take(20).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    #[ignore = "真机: 需 wxq_dict.bin"]
+    fn zhng_missing_key_fix_beats_jianpin() {
+        // C3 漏按歧义门（WowType 图模式优先级律）: zhng 双读歧义——
+        // 镇魂女鬼 简拼 ∩ zhong 漏 o。修复族 best（中 logp −2.99）领先
+        // 简拼 best（−7.71）≥2.0 → 中 #1、镇魂女鬼沉 #2 仍在场。
+        // sm 型（补不出合法读音, fix=None）简拼照旧。
+        let e = engine();
+        // CLI 产品路径同款 boost（jianpin_inject 开——B2.7c/C3 门生效域）
+        let mut e = e;
+        e.set_boost(crate::engine::BoostCfg {
+            jianpin_inject: true,
+            ..Default::default()
+        });
+        let out = e.query_typo_retry("zhng", None, 20, true, true);
+        let top1 = out.first().map(|c| c.word.clone()).unwrap_or_default();
+        assert!(
+            top1.contains("中"),
+            "zhng top1 应为 中（漏按修复优先）: {:?}",
+            out.iter().map(|c| c.word.as_str()).take(5).collect::<Vec<_>>()
+        );
+        assert!(
+            out.iter().take(3).any(|c| c.word.contains("镇魂女鬼")),
+            "简拼面应沉位但在场: {:?}",
+            out.iter().map(|c| c.word.as_str()).take(6).collect::<Vec<_>>()
+        );
+        let sm = e.query_typo_retry("sm", None, 20, true, true);
+        assert!(
+            sm.first().is_some_and(|c| c.word.contains("什么")),
+            "sm 无修复族简拼照旧: {:?}",
+            sm.iter().map(|c| c.word.as_str()).take(3).collect::<Vec<_>>()
         );
     }
 

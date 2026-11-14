@@ -1990,7 +1990,37 @@ impl Engine {
             if b.jianpin_inject && !inp.is_empty() {
                 let hits = self.jianpin_key_hits(&inp);
                 if !hits.is_empty() {
-                    let top = out.first().map(|c| c.score).unwrap_or(0.0);
+                    let mut top = out.first().map(|c| c.score).unwrap_or(0.0);
+                    // C3 漏按歧义门: solo_jianpin_inject 同律（amb_fix_best
+                    /// 注释）——长查询简拼面同样让位漏按修复。
+                    const JP_AMB_MARGIN: f64 = 2.0;
+                    let fix_word = self.amb_fix_best(&inp, &out);
+                    let amb_flip = match (&fix_word, hits.first()) {
+                        (Some((_, flp)), Some(jp)) => {
+                            *flp >= jp.logp + JP_AMB_MARGIN
+                        }
+                        _ => false,
+                    };
+                    if std::env::var("C3_DBG").is_ok() {
+                        eprintln!(
+                            "[c3] inp={inp} fix={fix_word:?} jp_logp={:?} flip={amb_flip}",
+                            hits.first().map(|c| c.logp),
+                        );
+                    }
+                    if amb_flip {
+                        if let Some((fw, _)) = &fix_word {
+                            let target = top + 0.5;
+                            if let Some(x) =
+                                out.iter_mut().find(|x| &x.word == fw)
+                            {
+                                if x.score < target {
+                                    x.score = target;
+                                }
+                            }
+                            // 简拼族沉半步（仍保简拼面在场, 仅让位修复词）
+                            top = target - 0.6;
+                        }
+                    }
                     let mut injected = false;
                     for (i, c) in hits.into_iter().take(6).enumerate() {
                         let target = top + 0.5 - 0.01 * i as f64;
@@ -2789,6 +2819,26 @@ impl Engine {
     /// return——双声母简拼键（sm→什么）被截胡无注入机会。native 双键
     /// 钉序=首键字列在途律（腾讯 bin 实证 sm=撒/色/四…, golden 忠实锁），
     /// boost 域在此补双声母简拼体验（hits 空=零行为, 忠实门不受触）。
+    /// C3 漏按歧义门（WowType 图模式优先级律, 2026-11-14; zhng 案:
+    /// 镇魂女鬼 简拼 ∩ zhong 漏 o 两可时全拼修复优先）: 面板内
+    /// 「读音去撇号 == inp 删 1 字符」的候选即漏按修复族（fbcol 单字面
+    /// 天然在场）, 返回 best（词面, logp）。sm/bj/xh 型无修复族（补不出
+    /// 合法读音）返回 None——简拼照旧; 长简拼键（tqsdyy）全拼串删 1
+    /// 字符不可能是声母串, 永不命中。
+    pub(super) fn amb_fix_best(&self, inp: &str, cands: &[Cand]) -> Option<(String, f64)> {
+        let inp_b = inp.as_bytes();
+        cands
+            .iter()
+            .filter(|c| {
+                let rb = c.reading.replace('\'', "").into_bytes();
+                rb.len() == inp_b.len() + 1 && is_del_one(inp_b, &rb)
+            })
+            .max_by(|a, b| {
+                a.logp.partial_cmp(&b.logp).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|c| (c.word.clone(), c.logp))
+    }
+
     fn solo_jianpin_inject(&self, inp: &str, cands: Vec<Cand>) -> Vec<Cand> {
         let Some(b) = &self.boost else { return cands };
         if !b.jianpin_inject || inp.is_empty() {
@@ -2810,9 +2860,38 @@ impl Engine {
             .iter()
             .map(|x| x.score)
             .fold(f64::NEG_INFINITY, f64::max);
+        // C3 裁决: 修复族 best logp 领先简拼 best ≥ 2.0（log10 域 =
+        // 频次百倍）时翻转——修复词置顶, 简拼族沉 0.1 让位。
+        const JP_AMB_MARGIN: f64 = 2.0;
+        let fix = self.amb_fix_best(inp, &c);
+        let flip = match (&fix, hits.first()) {
+            (Some((_, flp)), Some(jp)) => *flp >= jp.logp + JP_AMB_MARGIN,
+            _ => false,
+        };
+        if std::env::var("C3_DBG").is_ok() {
+            eprintln!(
+                "[c3-solo] inp={inp} fix={fix:?} jp={:?} flip={flip}",
+                hits.first().map(|c| c.logp),
+            );
+        }
         let mut injected = false;
+        let base = if flip {
+            if let Some((fw, _)) = &fix {
+                let target = top + 0.5;
+                if let Some(x) = c.iter_mut().find(|x| &x.word == fw) {
+                    if x.score < target {
+                        x.score = target;
+                        injected = true;
+                    }
+                }
+            }
+            top - 0.1
+        } else {
+            top
+        };
+        let mut injected = injected;
         for (i, h) in hits.into_iter().take(6).enumerate() {
-            let target = top + 0.5 - 0.01 * i as f64;
+            let target = base + 0.5 - 0.01 * i as f64;
             match c.iter_mut().find(|x| x.word == h.word) {
                 Some(x) => {
                     if x.score < target {
@@ -3063,6 +3142,28 @@ impl Engine {
         c.wid = -1;
         Some(c)
     }
+}
+
+/// longer 删掉恰好一个字符后 == shorter（C3 漏按歧义门的修复族判定:
+/// 候选读音是输入漏打一键后的串）。双指针一遍扫描。
+fn is_del_one(shorter: &[u8], longer: &[u8]) -> bool {
+    if longer.len() != shorter.len() + 1 {
+        return false;
+    }
+    let mut skipped = false;
+    let (mut i, mut j) = (0usize, 0usize);
+    while j < longer.len() {
+        if i < shorter.len() && shorter[i] == longer[j] {
+            i += 1;
+            j += 1;
+        } else if !skipped {
+            skipped = true;
+            j += 1;
+        } else {
+            return false;
+        }
+    }
+    i == shorter.len()
 }
 
 // ---------------------------------------------------------------------------
