@@ -4,8 +4,8 @@
 用法: P2C_STEM=data/p2c_open python3 tools/p2c_eval.py [--skip-p2c]
 
 口径注记（2026-11-14 清理役）:
-- WXQ_BIN 透传（缺省腾讯 wxq_dict——与 real_tests.sh 同锚; open bin
-  需显式传）。
+- WXQ_BIN 透传（缺省仓内 open bin——开源自洽; 腾讯 wxq_dict 锚
+  需显式传, 与 real_tests.sh 口径互补）。
 - --skip-p2c: 只跑 base 模式（看守回归用, 省半程）。旧版不认识此
   旗标会静默跑双模。
 - p2c 模式 top1=0 是已知态（P2C v1 注入「句面补位不抢头」保守律
@@ -20,7 +20,8 @@ import subprocess
 import sys
 
 env = dict(os.environ)
-env.setdefault('WXQ_BIN', '/home/banshan/tmp/wetype-win/wxq_dict.bin')
+REPO = os.path.normpath(os.path.join(os.path.dirname(__file__) or '.', '..'))
+env.setdefault('WXQ_BIN', os.path.join(REPO, 'open', 'hanhuo_open.bin'))
 env.setdefault('HANHUO_BIN', env['WXQ_BIN'])
 P2C = os.environ.get('P2C_STEM', 'data/p2c_open')
 BIN = 'target/release/hanhuo'

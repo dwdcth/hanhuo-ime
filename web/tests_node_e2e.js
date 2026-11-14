@@ -1,12 +1,18 @@
 // hanhuo wasm 端到端: 真词典 bin + wasm 查询 × 原生 CLI 对照
 const fs = require('fs');
-const w = require('/tmp/wasm_node/hanhuo_wasm.js');
-// target web 模块需显式 initSync（node 无 fetch file）
-w.initSync({ module: fs.readFileSync('/tmp/wasm_node/hanhuo_wasm_bg.wasm') });
+// nodejs 胶水目录（WASM_NODE 覆盖; 生成: wasm-bindgen --target nodejs
+// --out-dir "$WASM_NODE" target/wasm32-unknown-unknown/release/hanhuo_wasm.wasm）
+const GLUE = process.env.WASM_NODE || '/tmp/wasm_node';
+const w = require(GLUE + '/hanhuo_wasm.js');
+// nodejs target 的 glue require 即装载; target web 模块才需显式
+// initSync（兼容双形态: 有则调）
+if (typeof w.initSync === 'function') {
+  w.initSync({ module: fs.readFileSync(GLUE + '/hanhuo_wasm_bg.wasm') });
+}
 const { execSync } = require('child_process');
 
 const bin = fs.readFileSync(
-  '/mnt/s790/project/vtype-linux-archive/hanhuo/open/hanhuo_open.bin');
+  __dirname + '/../open/hanhuo_open.bin');
 const n = w.init(bin);
 console.log(`[init] 词条数: ${n}`);
 if (!n) process.exit(1);
@@ -21,8 +27,8 @@ let pass = 0;
 for (const [q, ctx] of cases) {
   const r = JSON.parse(w.query(q, ctx, 5));
   const native = execSync(
-    `/mnt/s790/project/vtype-linux-archive/hanhuo/target/release/hanhuo query ${q} --bin /mnt/s790/project/vtype-linux-archive/hanhuo/open/hanhuo_open.bin --topk 5  # CLI 默认同律（typo_retry 通道, wasm query 同源）`,
-    { encoding: 'utf-8', cwd: '/mnt/s790/project/vtype-linux-archive/hanhuo' });
+    `${__dirname}/../target/release/hanhuo query ${q} --bin ${__dirname}/../open/hanhuo_open.bin --topk 5`,  // CLI 默认同律（typo_retry 通道, wasm query 同源）
+    { encoding: 'utf-8' });
   const natTop = [...native.matchAll(/^\s+1\. (\S+)/gm)][0]?.[1]?.replace(/[\x00-\x1f]/g, '');
   const wasmTop = r.cands[0]?.word;
   const ok = wasmTop === natTop;
