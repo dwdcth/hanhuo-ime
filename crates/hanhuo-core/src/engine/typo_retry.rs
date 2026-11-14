@@ -585,6 +585,21 @@ impl Engine {
                 one.push((v, 1));
             }
         }
+        // 相邻换位（Damerau 1-edit; zhognguo→zhongguo 的 g/n 交换
+        // 族——WowType 对照案。跳过同字节对（恒等）与非字母位;
+        // hpmac 罚表换位 2.99 重于替换, 同 1-edit 域先接入）
+        for i in lo..hi.min(inp.len().saturating_sub(1)) {
+            let (a, c) = (inp.as_bytes()[i], inp.as_bytes()[i + 1]);
+            if a.is_ascii_lowercase() && c.is_ascii_lowercase() && a != c
+            {
+                let mut v = inp.as_bytes().to_vec();
+                v.swap(i, i + 1);
+                one.push((
+                    String::from_utf8(v).expect("纯 ASCII 换位"),
+                    1,
+                ));
+            }
+        }
         // 窗口右缘的插入（i=hi 间隙, 上面的位循环未覆盖）
         for (v, _, _) in insertions(inp, hi, hi) {
             one.push((v, 1));
