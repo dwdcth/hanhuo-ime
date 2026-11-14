@@ -1,7 +1,12 @@
 name: CI
-# 2026-11-14 用户指令: ci 本地跑——验证链在 tools/ci_local.sh,
-# 远端仅手动触发（workflow_dispatch）备急用
+# 触发律（2026-11-13 用户指令 + 11-14 本地化修正）:
+#   - 日常验证在本地 tools/ci_local.sh（免费额度有限, 不逐提交跑）
+#   - 远端只在打 v* tag 时跑（发布锚; b2d03da 起的纪律——11-14 本地化
+#     改造时误删 tag 触发, 本轮补回）
+#   - workflow_dispatch 手动备急
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
