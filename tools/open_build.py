@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import struct
 import sys
@@ -139,7 +140,63 @@ def main():
             if cur_r is None or freq > cur_r:
                 raw_entries[k] = freq
     log(f'主表条目: {len(entries)}（坏注音 {bad}）')
-
+    # ---------- 2.5 占位词估频（WowType 律吸收, 2026-11-14; MIT/Apache
+    # 参考 Gloridust/WowType lexicon.rs estimate_placeholder_freqs）:
+    # rime-ice 占位频次（ext 源 33.9 万词同值 100）按拼音切成已有词
+    # DP 最小代价、部分概率相乘 ×成词加成 e^3≈20, 上限=最冷部分
+    # 频次, 只升不降——中低频 top1 95.5→99.0 同款。raw 频次域做
+    # （entries 是量化 val 域——方向相反, 不可混用）。
+    PLACEHOLDER_BONUS = 3.0   # 成词加成（ln 域 ×20）
+    PLACEHOLDER_MAX_PART = 4  # 段长上限
+    from collections import Counter as _C
+    multi_keys = [k for k in raw_entries if len(k[1]) >= 2]
+    hist = _C(raw_entries[k] for k in multi_keys)
+    (placeholder, pcount), = hist.most_common(1)
+    if pcount >= 1000 and pcount * 4 >= len(multi_keys):
+        total0 = sum(raw_entries.values()) or 1.0
+        # 音节列→(词, 原始频次) 索引（估频切词查频; 同键取最高频）
+        syl_freq = {}
+        for (w, t), fq in raw_entries.items():
+            cur = syl_freq.get(t)
+            if cur is None or cur[1] < fq:
+                syl_freq[t] = (w, fq)
+        n_up = 0
+        for (w, t), fq in list(raw_entries.items()):
+            if fq != placeholder or len(t) < 2:
+                continue
+            chars = list(w)
+            n = len(chars)
+            if n != len(t):
+                continue  # 字音节不对齐（儿化等）
+            INF = float('inf')
+            best = [INF] * (n + 1); best[0] = 0.0
+            rarest = [INF] * (n + 1)
+            for i in range(n):
+                if best[i] == INF:
+                    continue
+                for j in range(i + 1, min(n, i + PLACEHOLDER_MAX_PART) + 1):
+                    if j - i == n:
+                        continue  # 不能用自己
+                    hit = syl_freq.get(t[i:j])
+                    if not hit:
+                        continue
+                    pf = hit[1]
+                    if pf <= 0:
+                        continue
+                    cost = best[i] - math.log(pf / total0)
+                    if cost < best[j]:
+                        best[j] = cost
+                        rarest[j] = min(rarest[i], pf)
+            if best[n] == INF:
+                continue
+            est = min(total0 * math.exp(PLACEHOLDER_BONUS - best[n]),
+                      rarest[n])
+            if est > fq:
+                raw_entries[(w, t)] = est
+                n_up += 1
+        log(f'[估频] 占位值 {placeholder}（{pcount} 词）→ {n_up} 词升频')
+    else:
+        log(f'[估频] 众数 {placeholder}（{pcount}/{len(multi_keys)}）未达门槛, 跳过')
     words_set = {w for (w, _) in entries}
     words = sorted(words_set)
     wid = {w: i for i, w in enumerate(words)}
