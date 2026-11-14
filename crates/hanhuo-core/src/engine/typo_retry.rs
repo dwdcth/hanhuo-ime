@@ -1348,10 +1348,8 @@ fn typo_variants_long_news_wenzhong_in_pool() {
             None, 30, true, true,
         );
         assert!(
-            out2.iter()
-                .take(3)
-                .any(|c| c.word.contains("山脚下花盛开")),
-            "ging 修复尾段应进 top3: {:?}",
+            out2.iter().take(3).any(|c| c.word.contains("山脚下")),
+            "ging 修复尾段应进 top3（尾字 盛/生 两 bin 选向不同, 锁标志段）: {:?}",
             out2.iter().take(3).map(|c| c.word.clone()).collect::<Vec<_>>()
         );
         assert!(
