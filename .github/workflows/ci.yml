@@ -1,7 +1,8 @@
 name: CI
+# 2026-11-14 用户指令: ci 本地跑——验证链在 tools/ci_local.sh,
+# 远端仅手动触发（workflow_dispatch）备急用
 on:
-  push:
-    tags: ['v*']  # 打 tag 才跑（免费额度纪律: 本地调通→提交→发版 tag 验证）
+  workflow_dispatch:
 
 jobs:
   test:
