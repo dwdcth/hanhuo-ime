@@ -7,8 +7,8 @@
 #
 # 跑法域:
 #   lib 单测 --ignored: 35 个（typo/fuzz/erwo/nnlm_bench/win_probe 等）
-#     WXQ_BIN  = wxq_dict.bin（腾讯词典锚——open bin 下 4 个词典域
-#     错配测试会假红: retry_fixes/fuzz_rescue/ctx_intent/fuzz_gate）
+#     WXQ_BIN = wxq_dict.bin（腾讯词典锚; 2026-11-14 双 bin 化改造后
+#     open bin 亦 35/35 全绿——脚本保持腾讯锚与 ci_local 的 open 锚分工）
 #   tests/ctx_dyn_rank: CTX_BIN = wxq.bin（全量 bin, 内嵌 NNLM 必需）
 #   tests/aux_code: 需 WUBI_YAML/RSD_TSV 私有码表（~/tmp/hanhuo 资产
 #     随易失盘迁移丢失, 缺位时 14 测 expect panic——资产恢复前跳过）
