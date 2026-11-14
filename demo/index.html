@@ -49,6 +49,8 @@ const dict = await (async () => {
 const n = w.init(new Uint8Array(dict));
 let t9 = new URLSearchParams(location.search).has('t9');
 if (t9) w.enable_t9(true);
+// 模糊音设置项（CLI --fuzz 同律; ?fuzz=1 强制开——jingnian→今年）
+if (new URLSearchParams(location.search).has('fuzz')) w.enable_fuzz(1);
 const nnlm = await fetch('./nnlm.safetensors').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
 if (nnlm) { if (w.init_nnlm(new Uint8Array(nnlm))) console.log('nnlm ok'); }
 w.enable_boost();  // 2026-11-14 解耦: NNLM 缺位基础 boost 面也开

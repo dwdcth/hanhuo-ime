@@ -37,6 +37,18 @@ export function enable_boost() {
 }
 
 /**
+ * 模糊音模式（真 IME 的「模糊音」设置项; CLI --fuzz 同律）。
+ * mode: 0=AUTO（结构质量门）/ 1=ON（强制开, 跳门——jin↔jing 类全救）/
+ * 2=OFF。demo 场景建议用户开=1（jingnian→今年 案）。
+ * @param {number} mode
+ * @returns {boolean}
+ */
+export function enable_fuzz(mode) {
+    const ret = wasm.enable_fuzz(mode);
+    return ret !== 0;
+}
+
+/**
  * T9 九宫模式开关（纯 2-9 数字键串走九宫展开——设计-T9九宫输入;
  * CLI --t9 同律, on=false 恢复默认关）。返回 true=成功。
  * @param {boolean} on
