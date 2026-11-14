@@ -13,6 +13,7 @@
 | 能力 | 说明 |
 |---|---|
 | 全拼 / 简拼 | DAT 读音索引，四层管线（切分→索引→路由→打分） |
+| 容错输入 | 错拼变体束（换位 zhognguo→中国 / 漏按 zhng→中 / 邻键），占位词估频 + 前缀补全边（zhongg→中国） |
 | T9 九宫 | 键串→音节签名展开→DAT 制导 DFS；邻键纠错（错击恢复） |
 | 语境 NNLM | 自训 2 层 GPT（LCCC 语料），候选重排 / 句序列重排（宽档 boost） |
 | 英文 | 词表候选（频序 / enlm 词级 LM 语境序） |
@@ -38,6 +39,8 @@ python3 tools/open_build.py          # → open/hanhuo_open.bin
 
 # 查询
 target/release/hanhuo query nihao --bin open/hanhuo_open.bin
+target/release/hanhuo query zhognguo --bin open/hanhuo_open.bin   # 换位容错 → 中国
+target/release/hanhuo query zhng --bin open/hanhuo_open.bin       # 漏按歧义 → 中
 target/release/hanhuo query 94664486 --bin open/hanhuo_open.bin --t9        # T9
 target/release/hanhuo query "" --ctx the --bin open/hanhuo_open.bin \
   --boost-tail --nnlm data/nnlm_open_mobile_v2.safetensors --topk 5          # 英文联想
