@@ -24,7 +24,7 @@ jobs:
         run: cargo build --release -p hanhuo-cli
       - name: Test
         run: cargo test --release -p hanhuo-core -p hanhuo-lm -p hanhuo-dict -p hanhuo-cli
-      - name: Golden（自洽回归锁）
+      - name: Golden（自洽回归锁, CI 锚双快照制）
         env:
           WXQ_BIN: ${{ github.workspace }}/open/hanhuo_open.bin
         run: |
@@ -32,11 +32,16 @@ jobs:
           # 词典构建（仓内钉版源 data/rimeice_cn——行为全锁定）
           python3 tools/open_build.py
           md5sum open/hanhuo_open.bin
-          target/release/hanhuo golden golden/open_golden.jsonl
-      # 快照锚律（2026-11-13 CI 锚定策）: golden 快照必须由 CI 环境产出
-      # 冻结——本地 rustc 与 CI stable 的引擎分差（bin md5 逐位同、
-      # logp 同、score 罚分域差）使本地产快照在 CI 失配 592/611。重锚
-      # SOP: 本轮 artifact 下载替换 golden/open_golden.jsonl 提交。
+          # 双锚律（v0.1.1 轮定谳, 2026-11-14）: 本地 rustc 与 CI stable
+          # 浮点/排序分叉（bin md5 逐位同/logp 同/score 罚分域差 3.0/kind
+          # 翻转）——一个快照不可能双端 611。CI 门用 ci_golden.jsonl
+          # （CI 环境产出）; 本地门 open_golden.jsonl（本地 rustc 产出,
+          # ci_local.sh 用）。行为变更时双锚都要重产: 本地重跑
+          # snapshot.py; CI 锚下载本轮 artifact 替换。
+          target/release/hanhuo golden golden/ci_golden.jsonl
+      # 快照锚律（双快照制, 2026-11-14）: 下方 artifact 是 CI 锚
+      # ci_golden.jsonl 的重产源——行为变更轮下载替换提交（本地锚
+      # open_golden.jsonl 由本地 snapshot.py 重产, 两锚各守一门）。
       - name: 快照 artifact（CI 环境锚）
         if: always()
         env:
