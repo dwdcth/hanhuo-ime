@@ -49,11 +49,17 @@
         if (opts.nnlmBytes) {
           const nb = opts.nnlmBytes instanceof Uint8Array
             ? opts.nnlmBytes : new Uint8Array(opts.nnlmBytes);
-          if (mod.init_nnlm(nb) && mod.enable_boost()) {
-            console.log('[glue] NNLM 注入 + 宽档 boost 已开');
+          if (mod.init_nnlm(nb)) {
+            console.log('[glue] NNLM 注入成功');
           } else {
-            console.warn('[glue] NNLM 装载失败, 忠实模式运行');
+            console.warn('[glue] NNLM 装载失败, B7/c.3 重排降级');
           }
+        }
+        // boost 无条件开（2026-11-14 解耦: C3 漏按门/简拼注入/B2.7e
+        // 补全边不依赖 NNLM——NNLM 缺位时基础 boost 面也该在场;
+        // 旧 && 短路让 NNLM 失败连 sm→什么 都没有）
+        if (mod.enable_boost()) {
+          console.log('[glue] 宽档 boost 已开');
         }
         return { ok: true };
       } catch (e) {

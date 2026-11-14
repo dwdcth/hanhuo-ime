@@ -16,7 +16,7 @@ input { font-size: 1.2em; padding: .4em; width: 60%; }
 <p><input id="q" placeholder="输入拼音（如 nihao）" autofocus> <button id="go">查询</button></p>
 <div id="out"></div>
 <script type="module">
-import init, { init as loadBin, query } from './hanhuo_wasm.js';
+import init, { init as loadBin, query, enable_boost } from './hanhuo_wasm.js';
 const $ = id => document.getElementById(id);
 const fmt = r => r.cands.slice(0, 8).map((c, i) =>
   `${i + 1}. ${c.word}  (${c.kind}, ${c.score.toFixed(2)})`).join('\n');
@@ -24,13 +24,14 @@ const fmt = r => r.cands.slice(0, 8).map((c, i) =>
   await init();
   const bin = await (await fetch('../open/hanhuo_open.bin')).arrayBuffer();
   const n = loadBin(new Uint8Array(bin));
+  enable_boost();  // 2026-11-14: CLI 默认同律（C3/简拼/补全面——微信输入法案）
   $('status').textContent = `引擎就绪：${n.toLocaleString()} 词条（wasm 2.8MB + 词典 ${(bin.byteLength / 1e6).toFixed(1)}MB）`;
   // 自动端到端: 与原生 CLI 裁定的四案
   const cases = [
     // 期望 = CLI 默认通道（query_typo_retry; 2026-11-20 wasm query
     // 改道同律——旧期望 进/为 是 e.query faithful 单字列语义）
     ['jintiantianqihenhao', '今天天气很好'], ['nihao', '你好'],
-    ['zhongguorenmin', '中国人民'], ['weixinshurufa', '为新输入法'],
+    ['zhongguorenmin', '中国人民'], ['weixinshurufa', '微信输入法'],
   ];
   let pass = 0;
   const lines = ['—— 自动对案（vs 原生 CLI）——'];
