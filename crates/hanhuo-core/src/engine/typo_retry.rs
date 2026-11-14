@@ -637,6 +637,22 @@ impl Engine {
                 }
             }
         }
+        // 相邻换位（Damerau 1-edit; zhognguo→zhongguo / nihoa→nihao
+        // 族——WowType 对照案。前置位（替换/插入/删除前）: 宽死窗下
+        // 1-编辑池会满截, 尾部枚举的 swap 存活不了（nihoa 案实证）;
+        // 跳过同字节对与非字母位
+        for i in lo..hi.min(inp.len().saturating_sub(1)) {
+            let (a, c) = (inp.as_bytes()[i], inp.as_bytes()[i + 1]);
+            if a.is_ascii_lowercase() && c.is_ascii_lowercase() && a != c
+            {
+                let mut v = inp.as_bytes().to_vec();
+                v.swap(i, i + 1);
+                one.push((
+                    String::from_utf8(v).expect("纯 ASCII 换位"),
+                    1,
+                ));
+            }
+        }
         for i in lo..hi.min(inp.len()) {
             if !inp.as_bytes()[i].is_ascii_lowercase() {
                 continue;
@@ -650,21 +666,6 @@ impl Engine {
             }
             for (v, _, _) in deletions(inp, i, i + 1) {
                 one.push((v, 1));
-            }
-        }
-        // 相邻换位（Damerau 1-edit; zhognguo→zhongguo 的 g/n 交换
-        // 族——WowType 对照案。跳过同字节对（恒等）与非字母位;
-        // hpmac 罚表换位 2.99 重于替换, 同 1-edit 域先接入）
-        for i in lo..hi.min(inp.len().saturating_sub(1)) {
-            let (a, c) = (inp.as_bytes()[i], inp.as_bytes()[i + 1]);
-            if a.is_ascii_lowercase() && c.is_ascii_lowercase() && a != c
-            {
-                let mut v = inp.as_bytes().to_vec();
-                v.swap(i, i + 1);
-                one.push((
-                    String::from_utf8(v).expect("纯 ASCII 换位"),
-                    1,
-                ));
             }
         }
         // 窗口右缘的插入（i=hi 间隙, 上面的位循环未覆盖）
