@@ -373,6 +373,17 @@ impl Engine {
                 if !full || pool.iter().any(|x| x.word == c.word) {
                     continue;
                 }
+                // 合成边不回流（nihoa 案, 2026-11-14）: split_face 拆分面
+                // （channels_full, wid=-1 + 占位 logp=10.5 + lp_locked）的
+                // 排位靠原面板 score_bias 语境钉住——跨变体坐标系回流后
+                // 占位 logp 被当真实分（nahaoa 面 那好啊 +11.7 罚 2× 后
+                // 仍 +11.1, 压 换位 1-编辑修复 你好 −0.15）。真实词边
+                // （exact/path, wid≥0）与 EMIX Fcomp（可借真 wid）不受
+                // 此门——lp_locked 单条件会误杀全部 fv 锁定的真实词边
+                // （score.rs mk: lp_locked = fv.is_some()）。
+                if c.wid < 0 && c.lp_locked {
+                    continue;
+                }
                 c.score -= TYPO_PENALTY * tv.edits as f64;
                 pool.push(c);
             }
@@ -1200,6 +1211,39 @@ fn typo_variants_long_news_wenzhong_in_pool() {
         let b = e.query("nihao", None, false, 30, true, true, true);
         assert_eq!(a.len(), b.len());
         assert!(a.iter().zip(&b).all(|(x, y)| x.word == y.word));
+    }
+
+    #[test]
+    #[ignore = "真机: 需 wxq_dict.bin"]
+    fn nihoa_swap_not_crushed_by_synthetic_reflow() {
+        // e99356b 挂账单案结案: nihoa 换位修复 你好 应 #1。病根 = split_face
+        // 拆分面（channels_full, wid=-1+占位 logp 10.5+lp_locked）经 2-编辑
+        // 变体 nahaoa 坐标系回流, 占位分压过 1-编辑修复——回流门筛
+        // wid<0&&lp_locked 后 你好 复位（那好啊 合成边退场, 真实 path 边仍在）。
+        let e = engine();
+        let out = e.query_typo_retry("nihoa", None, 20, true, true);
+        let words: Vec<&str> =
+            out.iter().map(|c| c.word.as_str()).take(6).collect();
+        // 核心: 换位修复词 你好 在前 3（CLI 产品路径 boost 下为 #1;
+        // 测试直连无 boost 分序略异——sentence 面可先行, 但不再被
+        // 那好啊 占位 10.5 压出池）。
+        assert!(
+            out.iter()
+                .take(3)
+                .any(|c| c.word.contains("你好")),
+            "nihoa 前3 应含 你好: {words:?}"
+        );
+        // 合成边退场: 那好啊 的 wid<0+lp_locked 回流边不再出现
+        assert!(
+            !out.iter().any(|c| c.lp_locked && c.wid < 0),
+            "合成边不应回流: {words:?}"
+        );
+        // 真实词边（同读音 na'hao'a 的 path/exact）不误杀:
+        assert!(
+            out.iter().any(|c| c.word.contains("好啊") && !c.lp_locked),
+            "na'hao'a 真实词边应在池: {:?}",
+            out.iter().map(|c| c.word.as_str()).take(20).collect::<Vec<_>>()
+        );
     }
 
     #[test]
