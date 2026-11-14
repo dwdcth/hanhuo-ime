@@ -1071,7 +1071,12 @@ fn cmd_query(bin: &Path, args: &[String]) -> i32 {
     // 模糊音即设置项默认关）。--faithful / --no-typo-retry 退回纯忠实。
     let fuzz_explicit =
         has_flag(args, "--fuzz") || typo_retry;
-    if !fuzz_explicit {
+    // 2026-11-14 修正: --fuzz 显式 = FUZZ_ON 强制开（跳质量门——usage
+    // 文案承诺的语义; 旧实现只「不设 OFF」实为 AUTO, jingnian 案被
+    // exact 覆盖门挡死, 显式旗标形同虚设）
+    if has_flag(args, "--fuzz") {
+        e.set_fuzz_mode(hanhuo_core::engine::FUZZ_ON);
+    } else if !fuzz_explicit {
         // 默认关 fuzz（--no-fuzz 已在场时同样 OFF, 幂等）
         e.set_fuzz_mode(hanhuo_core::engine::FUZZ_OFF);
     }

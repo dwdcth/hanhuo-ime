@@ -3191,9 +3191,11 @@ mod tests {
     #[ignore = "真机: 需 wxq_dict.bin"]
     fn ctx_intent_collocation_promote() {
         let mut e = tone_engine();
+        // 产品默认档 + nnlm_order（2026-11-14 双 bin 化: open bin 下
+        // 桃源/桃园 频次仅差 12%（38555/34265）, 单旋钮窄档的 τ2 提权
+        // 翻不动——CLI 产品档（default 全档）实测险胜 +0.05 #1）
         e.set_boost(crate::engine::BoostCfg {
             nnlm_order: true,
-            sentence_tail_sweep: 6,
             ..Default::default()
         });
         // 世外+taoyuan: 桃源 压 桃园（网络错形先验双 NNLM 判反的案）
@@ -3208,9 +3210,15 @@ mod tests {
         // 邯郸+xuebu: 学步 登顶
         let out2 = e.query("xuebu", Some("邯郸"), false, 5, true, true, true);
         assert_eq!(out2.first().map(|c| c.word.as_str()), Some("学步"));
-        // 无 ctx 恒等: taoyuan 无上文仍 桃园 首位
+        // 无 ctx 恒等: τ2 无上文不作用——自对照（同引擎关旋钮的无 ctx
+        // 面板一致; 双 bin 化: 腾讯无 ctx 桃园 #1/open 桃源 #1——自然
+        // 序随词典, 锁恒等语义不锁具体词）
         let out3 = e.query("taoyuan", None, false, 5, true, true, true);
-        assert_eq!(out3.first().map(|c| c.word.as_str()), Some("桃园"));
+        e.set_boost(crate::engine::BoostCfg::default());
+        let out4 = e.query("taoyuan", None, false, 5, true, true, true);
+        let w3 = out3.first().map(|c| c.word.clone());
+        let w4 = out4.first().map(|c| c.word.clone());
+        assert_eq!(w3, w4, "无 ctx 时 nnlm_order 不改变 top1");
     }
 
     // 审计用: 导出 wxq 主库全词表（word_text, 频序）
