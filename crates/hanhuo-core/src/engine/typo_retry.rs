@@ -386,6 +386,73 @@ impl Engine {
             // 变体池空=不可修死输入时触发, 修复面窄。
             return self.query(inp, ctx, false, topk, nn, ltr, false);
         }
+        // B2.7e 变体域补全注入（WowType completion 边律吸收, 2026-11-14;
+        // zhongg→中国 案: 死窗变体面（中俄 pending 抢占）下「读音以
+        // inp 为前缀」的补全词缺席——DAT 前缀 range 高频词注入变体池
+        // 顶（B2.7 律; 音节门同 B2.7c: 全串 terminal 不注）。
+        if self.boost.as_ref().is_some_and(|b| b.jianpin_inject) {
+            let st = self.dat.walk(inp.as_bytes(), ROOT);
+            if st >= 0
+                && !(st >= 0 && self.dat.is_terminal(st))
+                && inp.len() >= 4
+            {
+                let (lo, cnt) = self.dat.range(st);
+                if cnt > 0 {
+                    // range 内读音全以 inp 为前缀（678 族字典序截取会
+                    // 全是 zhongga 系垃圾）——遍历读音取首词按频 top4
+                    let mut comps: Vec<(u32, u32, u32)> = Vec::new();
+                    for r in lo..lo + cnt {
+                        let (o0, o1) = self.reading_slice(r);
+                        if o1 <= o0 {
+                            continue;
+                        }
+                        let w = self.wlist_at(o0);
+                        let fv = self.fv_of(w, o0);
+                        comps.push((w, r, fv));
+                    }
+                    comps.sort_by(|a, b| a.2.cmp(&b.2));
+                    comps.truncate(4);
+                    let top =
+                        pool.first().map(|c| c.score).unwrap_or(0.0);
+                    let mut injected = false;
+                    for (i, c0) in
+                        comps.into_iter().take(4).enumerate()
+                    {
+                        let target = top + 0.5 - 0.01 * i as f64;
+                        let w = self.word_text(c0.0);
+                        match pool.iter_mut().find(|x| x.word == w) {
+                            Some(x) => {
+                                if x.score < target {
+                                    x.score = target;
+                                    injected = true;
+                                }
+                            }
+                            None => {
+                                let mut c = self.mk(
+                                    c0.0,
+                                    c0.1 as i64,
+                                    Kind::Complete,
+                                    0,
+                                    None,
+                                    0.0,
+                                    Some(c0.2 as u16),
+                                );
+                                c.score = target;
+                                pool.push(c);
+                                injected = true;
+                            }
+                        }
+                    }
+                    if injected {
+                        pool.sort_by(|a, b| {
+                            b.score.partial_cmp(&a.score).unwrap_or(
+                                std::cmp::Ordering::Equal,
+                            )
+                        });
+                    }
+                }
+            }
+        }
         // B2.7c 变体域简拼接管（boost 域产品增强）: 不可切分输入恰为
         // 简拼表键（sm→什么）时, 变体面（邻键改写 s→a/e/o）覆写简拼
         // 意图——原始 query(inp) 本体在此分支永不返回, 主管线 B2.7

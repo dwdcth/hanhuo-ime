@@ -1930,6 +1930,59 @@ impl Engine {
                 if scorer_avail { Some(&scorer) } else { None },
             );
         }
+        // B2.7e 主管线补全注入（WowType completion 边律吸收, 2026-11-14;
+        // zhongg→中国 案: g 作声母终端可达走主管线时, pending/变体面
+        // （中俄 抢占）下「读音以 inp 为前缀」的补全词缺席——DAT
+        // 前缀 range 高频词注入（B2.7 律; 全串 terminal 不注）。
+        if let Some(b) = &self.boost {
+            if b.jianpin_inject && inp.len() >= 4 {
+                let st = self.dat.walk(inp.as_bytes(), ROOT);
+                if st >= 0 && !self.dat.is_terminal(st) {
+                    let (lo, cnt) = self.dat.range(st);
+                    if cnt > 0 {
+                        let comps = self.range_candidates(lo, cnt, 8);
+                        let top =
+                            out.first().map(|c| c.score).unwrap_or(0.0);
+                        let mut injected = false;
+                        for (i, c0) in
+                            comps.into_iter().take(4).enumerate()
+                        {
+                            let target = top + 0.5 - 0.01 * i as f64;
+                            let w = self.word_text(c0.0);
+                            match out.iter_mut().find(|x| x.word == w) {
+                                Some(x) => {
+                                    if x.score < target {
+                                        x.score = target;
+                                        injected = true;
+                                    }
+                                }
+                                None => {
+                                    let mut c = self.mk(
+                                        c0.0,
+                                        c0.1 as i64,
+                                        crate::Kind::Complete,
+                                        0,
+                                        None,
+                                        0.0,
+                                        Some(c0.2 as u16),
+                                    );
+                                    c.score = target;
+                                    out.push(c);
+                                    injected = true;
+                                }
+                            }
+                        }
+                        if injected {
+                            out.sort_by(|a, b| {
+                                b.score.partial_cmp(&a.score).unwrap_or(
+                                    std::cmp::Ordering::Equal,
+                                )
+                            });
+                        }
+                    }
+                }
+            }
+        }
         // B2.7 简拼表键注入（超越档）: 输入恰为简拼表键时, 表内整键候选
         // 置顶（首字母序列 == 输入 的整键命中; tqsdyy→天青色等烟雨）。
         // 只增不改——面板已有词跳过; 无 boost / 忠实门零行为。
