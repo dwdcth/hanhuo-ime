@@ -1433,10 +1433,10 @@ mod tests {
 
     #[test]
 #[test]
-#[ignore = "真机: 需 nnlm_mobile_fp32"]
+#[ignore = "真机: 需 nnlm_open_mobile_v2"]
 fn nnlm_bench_b7_batch() {
     let bytes =
-        std::fs::read("../../data/nnlm_mobile_fp32.safetensors").unwrap();
+        std::fs::read("../../data/nnlm_open_mobile_v2.safetensors").unwrap();
     let m = hanhuo_lm::nnlm::Nnlm::from_safetensors(&bytes).unwrap();
     let base = "充满激情的跋涉远比到达大墓地的更能给人带来了去";
     // 单字变体 13 面（B7 形态: 同骨架一字之差）
@@ -1487,10 +1487,10 @@ fn nnlm_bench_b7_batch() {
 
     // 局部差分证伪探针（整句排序残局 §瓶颈③）: 短窗 mobile NNLM 分辨力
     #[test]
-    #[ignore = "真机: 需 nnlm_mobile_fp32"]
+    #[ignore = "真机: 需 nnlm_open_mobile_v2"]
     fn win_probe_endgame() {
         let bytes =
-            std::fs::read("../../data/nnlm_mobile_fp32.safetensors")
+            std::fs::read("../../data/nnlm_open_mobile_v2.safetensors")
             .unwrap();
         let m = hanhuo_lm::nnlm::Nnlm::from_safetensors(&bytes).unwrap();
         let seq = |t: &str| m.encode(t).unwrap_or_default();

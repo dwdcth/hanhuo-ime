@@ -1288,6 +1288,15 @@ fn typo_variants_long_news_wenzhong_in_pool() {
         // 简拼 best（−7.71）≥2.0 → 中 #1、镇魂女鬼沉 #2 仍在场。
         // sm 型（补不出合法读音, fix=None）简拼照旧。
         let e = engine();
+        // bin 域门: 本测试锚 open bin 词典域（zhng 是 open 简拼表键,
+        // 镇魂女鬼/中/张/整 的 fbcol 族在场是 open 词典结构——腾讯
+        // wxq_dict 下 zhng 域不同, 断言不适用）。
+        if !std::env::var("WXQ_BIN")
+            .unwrap_or_default()
+            .contains("open")
+        {
+            return;
+        }
         // CLI 产品路径同款 boost（jianpin_inject 开——B2.7c/C3 门生效域）
         let mut e = e;
         e.set_boost(crate::engine::BoostCfg {

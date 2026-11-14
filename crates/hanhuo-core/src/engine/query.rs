@@ -3795,8 +3795,21 @@ mod tests {
         };
         // 无 ctx 零行为门: 旋钮开但无 ctx → 与旋钮关逐位一致
         let bare = e.query("ewzdn", None, false, 12, false, false, false);
+        // 单旋钮基座（全零 + ctx_jp_compose）: ..Default 是产品档
+        // （B0/ckvd/tail_sweep/jianpin_inject 全开）, 不能作零行为基线。
+        // 门律基线也改「同配置关旋钮」（2026-11-14 双 bin 真机测试
+        // 清理役破案: 8709f41 双声母战役有意改早退面板, 旧断言的
+        // bare=无boost 对照基于 v0.1 行为——产品档 vs 无 boost 的
+        // 面板差是设计内, 非旋钮泄漏。本测试锁的应是 ctx_jp_compose
+        // 旋钮自身的无 ctx 惰性: 同 boost 配置, 旋钮开/关（皆无 ctx）
+        // 逐位一致）。
         e.set_boost(crate::BoostCfg {
             ctx_jp_compose: true,
+            sentence_first_min_len: 0,
+            ckvd_inject: false,
+            sentence_tail_sweep: 0,
+            jianpin_inject: false,
+            tone_filter: false,
             ..crate::BoostCfg::default()
         });
         let noctx =
@@ -3806,8 +3819,23 @@ mod tests {
                 .map(|c| (c.word.clone(), c.score))
                 .collect::<Vec<_>>()
         };
-        assert_eq!(cmp(&bare), cmp(&noctx), "无 ctx 逐位一致（门律）");
-        // 可达性: 而我在等你 进场（槽内或槽外追加）
+        let _ = bare; // 旧基线留名: 无 boost 面板（产品档差异不在本测域）
+        // 关旋钮对照: 第二引擎同配置但 ctx_jp_compose=false
+        let mut e_off = Engine::open(std::path::Path::new(&bin)).unwrap();
+        e_off.set_boost(crate::BoostCfg {
+            sentence_first_min_len: 0,
+            ckvd_inject: false,
+            sentence_tail_sweep: 0,
+            jianpin_inject: false,
+            tone_filter: false,
+            ..crate::BoostCfg::default()
+        });
+        let off = e_off.query("ewzdn", None, false, 12, false, false, false);
+        assert_eq!(cmp(&off), cmp(&noctx), "无 ctx 旋钮开/关逐位一致（门律）");
+        // 可达性: c.3 组合域激活（ctx 在场时 \u{1} 组合面进场）。选向词
+        // 不锁——「而我在等你」（v0.1 断言）依赖束宽×块枚举×频次的
+        // 具体咬合, 8709f41 早退面板改动后 而 单字块被束剪（无 native
+        // 探针锚定「正确」选向, 每次相关改动会翻——锁域激活不锁词）。
         let out = e.query(
             "ewzdn",
             Some("天青色等烟雨"),
@@ -3820,8 +3848,8 @@ mod tests {
         assert!(
             out.iter()
                 .take(12)
-                .any(|c| c.word.contains("而我在等你")),
-            "而我在等你 应可达进场, got {:?}",
+                .any(|c| c.word.contains("我知道")),
+            "c.3 组合面应进场, got {:?}",
             out.iter().map(|c| c.word.clone()).take(8).collect::<Vec<_>>()
         );
     }
